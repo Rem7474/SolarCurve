@@ -625,8 +625,9 @@ function initMap() {
 
   map.on('click', (event) => {
     const { lat, lng } = event.latlng;
-    const isShiftClick = Boolean(event.originalEvent?.shiftKey);
-    if (isShiftClick && marker) {
+    // Correction: Leaflet gère le shift pour zoom/crop, donc on utilise ctrl+clic pour la rotation azimut
+    const isCtrlClick = Boolean(event.originalEvent?.ctrlKey);
+    if (isCtrlClick && marker) {
       const markerLatLng = marker.getLatLng();
       const bearing = bearingBetweenPoints(
         markerLatLng.lat,
@@ -637,7 +638,7 @@ function initMap() {
       azimuthInput.value = String(azimuthNorthClockwiseToAzimuthSouth(bearing));
       setAutoOppositeAzimuth();
       updateAzimuthArrowFromInputs();
-      mapHintEl.textContent = `Azimut ajusté depuis la carte (${azimuthInput.value}°).`;
+      mapHintEl.textContent = `Azimut ajusté depuis la carte (${azimuthInput.value}°). (Ctrl+clic)`;
       return;
     }
 
