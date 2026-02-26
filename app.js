@@ -5,32 +5,16 @@ const geoBtn = document.getElementById('geo-btn');
 const estimateBtn = document.getElementById('estimate-btn');
 const statusEl = document.getElementById('status');
 const statsEl = document.getElementById('stats');
-const annualChartCanvas = document.getElementById('productionChart');
 const dailyProfileChartCanvas = document.getElementById('dailyProfileChart');
-const monthSlider = document.getElementById('monthSlider');
-const monthLabel = document.getElementById('monthLabel');
+const daySlider = document.getElementById('daySlider');
+const dayLabel = document.getElementById('dayLabel');
 const latInput = document.getElementById('lat');
 const lonInput = document.getElementById('lon');
 const mapHintEl = document.getElementById('mapHint');
 
-const MONTH_NAMES = [
-  'Janvier',
-  'Février',
-  'Mars',
-  'Avril',
-  'Mai',
-  'Juin',
-  'Juillet',
-  'Août',
-  'Septembre',
-  'Octobre',
-  'Novembre',
-  'Décembre',
-];
-
-let annualChart;
 let dailyProfileChart;
 let currentHourlyEntries = [];
+let currentDailyData = [];
 let map;
 let marker;
 
@@ -38,8 +22,8 @@ sourceSelect.addEventListener('change', () => {
   pvwattsKeyWrapper.classList.toggle('hidden', sourceSelect.value !== 'pvwatts');
 });
 
-monthSlider.addEventListener('input', () => {
-  updateMonthlyProfileChart();
+daySlider.addEventListener('input', () => {
+  updateSelectedDayChart();
 });
 
 latInput.addEventListener('change', () => {
@@ -92,11 +76,13 @@ form.addEventListener('submit', async (event) => {
     }
 
     currentHourlyEntries = hourlyEntries;
-    renderAnnualChart(dailyData);
+    currentDailyData = dailyData;
     renderStats(dailyData);
-    monthSlider.disabled = false;
-    monthSlider.value = '1';
-    updateMonthlyProfileChart();
+    daySlider.disabled = false;
+    daySlider.min = '1';
+    daySlider.max = String(dailyData.length);
+    daySlider.value = '1';
+    updateSelectedDayChart();
     setStatus(`Estimation terminée (${params.source.toUpperCase()}).`);
   } catch (error) {
     console.error(error);
@@ -174,9 +160,7 @@ async function fetchFromPVGIS({ lat, lon, peakPower, tilt, azimuth, losses }) {
 
   const response = await fetchJSONFromAPI(
     `/api/pvgis?${params.toString()}`,
-    `https://re.jrc.ec.europa.eu/api/v5_3/seriescalc?${params.toString()}`,
-    'PVGIS',
-    { allowAllOriginsFallback: true }
+    'PVGIS'
   );
 
   const data = await response.json();
@@ -241,7 +225,6 @@ async function fetchFromPVWatts({ lat, lon, peakPower, tilt, azimuth, losses, pv
 
   const response = await fetchJSONFromAPI(
     `/api/pvwatts?${params.toString()}`,
-    `https://developer.nrel.gov/api/pvwatts/v8.json?${params.toString()}`,
     'PVWatts'
   );
 
@@ -281,47 +264,20 @@ async function fetchFromPVWatts({ lat, lon, peakPower, tilt, azimuth, losses, pv
   };
 }
 
-async function fetchJSONFromAPI(
-  proxyUrl,
-  directUrl,
-  sourceName,
-  { allowAllOriginsFallback = false } = {}
-) {
+async function fetchJSONFromAPI(apiUrl, sourceName) {
   let response;
 
-  response = await safeFetch(proxyUrl);
-
-  if (!response || response.status === 404 || response.status === 405 || response.status === 501) {
-    response = await safeFetch(directUrl);
-  }
-
-  if (!response && allowAllOriginsFallback) {
-    const wrappedUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(directUrl)}`;
-    response = await safeFetch(wrappedUrl);
-    if (response && response.ok) {
-      setStatus(`${sourceName}: fallback AllOrigins utilisé (mode secours).`);
-    }
-  }
-
-  if (!response) {
-    throw new Error(
-      `${sourceName}: blocage réseau/CORS. Utilisez un proxy serveur same-origin (ex: /api/${sourceName.toLowerCase()}).`
-    );
+  try {
+    response = await fetch(apiUrl);
+  } catch {
+    throw new Error(`${sourceName}: endpoint ${apiUrl} inaccessible.`);
   }
 
   if (!response.ok) {
-    throw new Error(`${sourceName} indisponible (${response.status}).`);
+    throw new Error(`${sourceName} indisponible via ${apiUrl} (${response.status}).`);
   }
 
   return response;
-}
-
-async function safeFetch(url) {
-  try {
-    return await fetch(url);
-  } catch {
-    return null;
-  }
 }
 
 function parsePVGISTime(time) {
@@ -360,60 +316,20 @@ function azimuthSouthToAzimuthNorthClockwise(azimuthSouth) {
   return ((result % 360) + 360) % 360;
 }
 
-function renderAnnualChart(dailyData) {
-  const labels = dailyData.map((row) => row.day);
-  const values = dailyData.map((row) => row.kwh);
-
-  if (annualChart) {
-    annualChart.destroy();
-  }
-
-  annualChart = new Chart(annualChartCanvas, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: 'Production journalière (kWh)',
-          data: values,
-          borderWidth: 2,
-          tension: 0.2,
-          pointRadius: 0,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: {
-          ticks: { maxTicksLimit: 12 },
-        },
-        y: {
-          title: {
-            display: true,
-            text: 'kWh/jour',
-          },
-        },
-      },
-      plugins: {
-        legend: {
-          display: true,
-        },
-      },
-    },
-  });
-}
-
-function updateMonthlyProfileChart() {
-  const selectedMonth = Number(monthSlider.value);
-  if (!currentHourlyEntries.length || Number.isNaN(selectedMonth)) {
+function updateSelectedDayChart() {
+  const selectedIndex = Number(daySlider.value) - 1;
+  if (!currentHourlyEntries.length || !currentDailyData.length || Number.isNaN(selectedIndex)) {
     return;
   }
 
-  monthLabel.textContent = MONTH_NAMES[selectedMonth - 1];
+  const selectedDay = currentDailyData[selectedIndex];
+  if (!selectedDay) {
+    return;
+  }
 
-  const selectedProfile = buildMonthAverageProfile(currentHourlyEntries, selectedMonth);
+  dayLabel.textContent = formatDayLabel(selectedDay.day);
+
+  const selectedProfile = buildSpecificDayProfile(currentHourlyEntries, selectedDay.day);
   const juneLimit = buildSpecificDayProfile(currentHourlyEntries, '2020-06-21');
   const decemberLimit = buildSpecificDayProfile(currentHourlyEntries, '2020-12-21');
   const labels = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}h`);
@@ -421,7 +337,7 @@ function updateMonthlyProfileChart() {
   if (dailyProfileChart) {
     dailyProfileChart.data.labels = labels;
     dailyProfileChart.data.datasets[0].data = selectedProfile;
-    dailyProfileChart.data.datasets[0].label = `Mois sélectionné (${MONTH_NAMES[selectedMonth - 1]})`;
+    dailyProfileChart.data.datasets[0].label = `Jour sélectionné (${dayLabel.textContent})`;
     dailyProfileChart.data.datasets[1].data = juneLimit;
     dailyProfileChart.data.datasets[2].data = decemberLimit;
     dailyProfileChart.update();
@@ -434,7 +350,7 @@ function updateMonthlyProfileChart() {
       labels,
       datasets: [
         {
-          label: `Mois sélectionné (${MONTH_NAMES[selectedMonth - 1]})`,
+          label: `Jour sélectionné (${dayLabel.textContent})`,
           data: selectedProfile,
           borderWidth: 2.2,
           tension: 0.2,
@@ -471,21 +387,6 @@ function updateMonthlyProfileChart() {
       },
     },
   });
-}
-
-function buildMonthAverageProfile(hourlyEntries, month) {
-  const totals = Array.from({ length: 24 }, () => 0);
-  const counts = Array.from({ length: 24 }, () => 0);
-
-  for (const entry of hourlyEntries) {
-    if (entry.month !== month) {
-      continue;
-    }
-    totals[entry.hour] += entry.kwh;
-    counts[entry.hour] += 1;
-  }
-
-  return totals.map((total, hour) => Number((counts[hour] ? total / counts[hour] : 0).toFixed(3)));
 }
 
 function buildSpecificDayProfile(hourlyEntries, dayKey) {
@@ -527,7 +428,22 @@ function setStatus(message, isError = false) {
 
 function toggleLoading(isLoading) {
   estimateBtn.disabled = isLoading;
-  estimateBtn.textContent = isLoading ? 'Calcul...' : 'Estimer la courbe annuelle';
+  estimateBtn.textContent = isLoading ? 'Calcul...' : 'Estimer la courbe journalière';
+}
+
+function formatDayLabel(dayKey) {
+  const [year, month, day] = dayKey.split('-').map(Number);
+  if (!year || !month || !day) {
+    return dayKey;
+  }
+
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.toLocaleDateString('fr-FR', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
 }
 
 function initMap() {

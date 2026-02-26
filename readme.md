@@ -16,17 +16,7 @@ L'application utilise :
 Option 1 (simple) :
 1. Ouvrir `index.html` dans le navigateur.
 
-Option 2 (recommandée, éviter certains soucis CORS selon navigateur) :
-1. Lancer un serveur local depuis le dossier du projet.
-2. Mini serveur Python avec CORS inclus :
-
-```bash
-python server.py
-```
-
-3. Ouvrir `http://127.0.0.1:8000`.
-
-Option 3 (serveur Python standard) :
+Option 2 (serveur local statique) :
 
 ```bash
 python -m http.server 8000
@@ -45,8 +35,8 @@ Puis ouvrir `http://localhost:8000`.
 4. Cliquer sur **Estimer la courbe annuelle**.
 
 Résultats :
-- Courbe **kWh/jour** sur 365 jours.
-- Slider mensuel (janvier → décembre) pour visualiser le **profil journalier horaire** moyen du mois sélectionné.
+- Affichage d'une **seule courbe journalière à la fois** (24 points horaires).
+- Slider de jour pour parcourir les jours calculés de l'année.
 - Superposition des courbes limites : **21 juin** (été) et **21 décembre** (hiver).
 - Totaux annuels, moyenne journalière, meilleur et plus faible jour.
 
@@ -56,13 +46,7 @@ L'application appelle d'abord des routes locales same-origin :
 - `/api/pvgis`
 - `/api/pvwatts`
 
-Cela évite le blocage CORS côté navigateur. Le fichier `server.py` fournit ces routes en local.
-Si ces routes n'existent pas en production, l'app tente un appel direct API (qui peut être bloqué par CORS selon le fournisseur).
-
-Pour **PVGIS uniquement**, un fallback de secours est aussi tenté via :
-- `https://api.allorigins.win/raw?url=...`
-
-Ce fallback est pratique en test, mais non recommandé pour la production (dépendance tierce externe).
+Ces routes `/api/*` sont obligatoires pour éviter le blocage CORS côté navigateur.
 
 ### PVGIS
 - Gratuit, sans clé API.
@@ -98,6 +82,6 @@ Si vous déployez sur un domaine public (ex: `https://solar.remcorp.fr`), il fau
 - `GET /api/pvgis` -> proxy vers `https://re.jrc.ec.europa.eu/api/v5_3/seriescalc`
 - `GET /api/pvwatts` -> proxy vers `https://developer.nrel.gov/api/pvwatts/v8.json`
 
-Sinon, l'appel direct navigateur peut être bloqué par la politique CORS de l'API distante.
+L'application est configurée pour utiliser exclusivement ces routes `/api/*`.
 
 

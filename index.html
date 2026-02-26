@@ -68,7 +68,7 @@
 
           <div class="actions">
             <button id="geo-btn" type="button">Utiliser ma position</button>
-            <button id="estimate-btn" type="submit">Estimer la courbe annuelle</button>
+            <button id="estimate-btn" type="submit">Estimer la courbe journalière</button>
           </div>
         </form>
 
@@ -80,14 +80,11 @@
       <section class="card">
         <div id="status" class="status">Prêt.</div>
         <div id="stats" class="stats"></div>
-        <h2 class="chart-title">Production journalière sur l'année</h2>
-        <canvas id="productionChart" height="110"></canvas>
-
-        <h2 class="chart-title">Profil journalier (heure par heure)</h2>
+        <h2 class="chart-title">Profil journalier (heure par heure, 1 jour à la fois)</h2>
         <div class="slider-row">
-          <label for="monthSlider">Mois</label>
-          <input id="monthSlider" type="range" min="1" max="12" step="1" value="1" disabled />
-          <span id="monthLabel">Janvier</span>
+          <label for="daySlider">Jour</label>
+          <input id="daySlider" type="range" min="1" max="365" step="1" value="1" disabled />
+          <span id="dayLabel">-</span>
         </div>
         <canvas id="dailyProfileChart" height="110"></canvas>
       </section>
