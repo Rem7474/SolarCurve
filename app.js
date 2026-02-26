@@ -27,6 +27,8 @@ let map;
 let marker;
 let azimuthShaft;
 let azimuthHead;
+let azimuthSecondaryShaft;
+let azimuthSecondaryHead;
 
 sourceSelect.addEventListener('change', () => {
   pvwattsKeyWrapper.classList.toggle('hidden', sourceSelect.value !== 'pvwatts');
@@ -36,6 +38,10 @@ compareAzimuthCheckbox.addEventListener('change', () => {
   const enabled = compareAzimuthCheckbox.checked;
   azimuth2Wrapper.classList.toggle('hidden', !enabled);
   azimuth2Input.disabled = !enabled;
+  if (enabled) {
+    setAutoOppositeAzimuth(true);
+  }
+  updateAzimuthArrowFromInputs();
 });
 
 daySlider.addEventListener('input', () => {
@@ -51,6 +57,12 @@ lonInput.addEventListener('change', () => {
 });
 
 azimuthInput.addEventListener('input', () => {
+  setAutoOppositeAzimuth();
+  updateAzimuthArrowFromInputs();
+});
+
+azimuth2Input.addEventListener('input', () => {
+  azimuth2Input.dataset.auto = 'false';
   updateAzimuthArrowFromInputs();
 });
 
@@ -370,6 +382,38 @@ function azimuthSouthToAzimuthNorthClockwise(azimuthSouth) {
   return ((result % 360) + 360) % 360;
 }
 
+function azimuthNorthClockwiseToAzimuthSouth(bearing) {
+  const result = 180 - bearing;
+  return normalizeAzimuthSouth(result);
+}
+
+function normalizeAzimuthSouth(value) {
+  const normalized = ((value + 180) % 360 + 360) % 360 - 180;
+  return normalized === -180 ? 180 : normalized;
+}
+
+function getOppositeAzimuth(azimuthSouth) {
+  return normalizeAzimuthSouth(azimuthSouth + 180);
+}
+
+function setAutoOppositeAzimuth(force = false) {
+  if (!compareAzimuthCheckbox.checked && !force) {
+    return;
+  }
+
+  if (!force && azimuth2Input.dataset.auto === 'false') {
+    return;
+  }
+
+  const azimuthSouth = Number(azimuthInput.value);
+  if (Number.isNaN(azimuthSouth)) {
+    return;
+  }
+
+  azimuth2Input.value = String(getOppositeAzimuth(azimuthSouth));
+  azimuth2Input.dataset.auto = 'true';
+}
+
 function updateSelectedDayChart() {
   const selectedIndex = Number(daySlider.value) - 1;
   if (
@@ -577,6 +621,22 @@ function initMap() {
 
   map.on('click', (event) => {
     const { lat, lng } = event.latlng;
+    const isShiftClick = Boolean(event.originalEvent?.shiftKey);
+    if (isShiftClick && marker) {
+      const markerLatLng = marker.getLatLng();
+      const bearing = bearingBetweenPoints(
+        markerLatLng.lat,
+        markerLatLng.lng,
+        lat,
+        lng
+      );
+      azimuthInput.value = String(azimuthNorthClockwiseToAzimuthSouth(bearing));
+      setAutoOppositeAzimuth();
+      updateAzimuthArrowFromInputs();
+      mapHintEl.textContent = `Azimut ajusté depuis la carte (${azimuthInput.value}°).`;
+      return;
+    }
+
     latInput.value = lat.toFixed(5);
     lonInput.value = lng.toFixed(5);
     placeOrMoveMarker(lat, lng);
@@ -630,12 +690,68 @@ function updateAzimuthArrowFromInputs() {
   const lat = Number(latInput.value);
   const lon = Number(lonInput.value);
   const azimuthSouth = Number(azimuthInput.value);
+  const azimuthSouth2 = Number(azimuth2Input.value);
+  const compareEnabled = compareAzimuthCheckbox.checked && !azimuth2Input.disabled;
 
   if (Number.isNaN(lat) || Number.isNaN(lon) || Number.isNaN(azimuthSouth)) {
     clearAzimuthArrow();
     return;
   }
 
+  const primaryLayers = updateArrowLayer(
+    lat,
+    lon,
+    azimuthSouth,
+    '#ef4444',
+    azimuthShaft,
+    azimuthHead
+  );
+  azimuthShaft = primaryLayers.shaft;
+  azimuthHead = primaryLayers.head;
+
+  if (compareEnabled && !Number.isNaN(azimuthSouth2)) {
+    const secondaryLayers = updateArrowLayer(
+      lat,
+      lon,
+      azimuthSouth2,
+      '#2563eb',
+      azimuthSecondaryShaft,
+      azimuthSecondaryHead
+    );
+    azimuthSecondaryShaft = secondaryLayers.shaft;
+    azimuthSecondaryHead = secondaryLayers.head;
+  } else {
+    clearSecondaryAzimuthArrow();
+  }
+}
+
+function clearAzimuthArrow() {
+  if (azimuthShaft) {
+    map.removeLayer(azimuthShaft);
+    azimuthShaft = null;
+  }
+
+  if (azimuthHead) {
+    map.removeLayer(azimuthHead);
+    azimuthHead = null;
+  }
+
+  clearSecondaryAzimuthArrow();
+}
+
+function clearSecondaryAzimuthArrow() {
+  if (azimuthSecondaryShaft) {
+    map.removeLayer(azimuthSecondaryShaft);
+    azimuthSecondaryShaft = null;
+  }
+
+  if (azimuthSecondaryHead) {
+    map.removeLayer(azimuthSecondaryHead);
+    azimuthSecondaryHead = null;
+  }
+}
+
+function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer) {
   const bearing = azimuthSouthToAzimuthNorthClockwise(azimuthSouth);
   const tip = destinationPoint(lat, lon, bearing, 220);
   const leftHead = destinationPoint(tip.lat, tip.lon, bearing + 150, 70);
@@ -652,37 +768,41 @@ function updateAzimuthArrowFromInputs() {
     [rightHead.lat, rightHead.lon],
   ];
 
-  if (!azimuthShaft) {
-    azimuthShaft = L.polyline(shaftLatLngs, {
-      color: '#ef4444',
+  if (!shaftLayer) {
+    shaftLayer = L.polyline(shaftLatLngs, {
+      color,
       weight: 3,
       opacity: 0.95,
     }).addTo(map);
   } else {
-    azimuthShaft.setLatLngs(shaftLatLngs);
+    shaftLayer.setLatLngs(shaftLatLngs);
   }
 
-  if (!azimuthHead) {
-    azimuthHead = L.polyline(headLatLngs, {
-      color: '#ef4444',
+  if (!headLayer) {
+    headLayer = L.polyline(headLatLngs, {
+      color,
       weight: 3,
       opacity: 0.95,
     }).addTo(map);
   } else {
-    azimuthHead.setLatLngs(headLatLngs);
+    headLayer.setLatLngs(headLatLngs);
   }
+
+  return { shaft: shaftLayer, head: headLayer };
 }
 
-function clearAzimuthArrow() {
-  if (azimuthShaft) {
-    map.removeLayer(azimuthShaft);
-    azimuthShaft = null;
-  }
+function bearingBetweenPoints(lat1, lon1, lat2, lon2) {
+  const lat1Rad = (lat1 * Math.PI) / 180;
+  const lat2Rad = (lat2 * Math.PI) / 180;
+  const deltaLonRad = ((lon2 - lon1) * Math.PI) / 180;
 
-  if (azimuthHead) {
-    map.removeLayer(azimuthHead);
-    azimuthHead = null;
-  }
+  const y = Math.sin(deltaLonRad) * Math.cos(lat2Rad);
+  const x =
+    Math.cos(lat1Rad) * Math.sin(lat2Rad) -
+    Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(deltaLonRad);
+
+  const bearing = (Math.atan2(y, x) * 180) / Math.PI;
+  return (bearing + 360) % 360;
 }
 
 function destinationPoint(lat, lon, bearingDeg, distanceMeters) {
@@ -710,4 +830,6 @@ function destinationPoint(lat, lon, bearingDeg, distanceMeters) {
   };
 }
 
+azimuth2Input.dataset.auto = 'true';
+setAutoOppositeAzimuth(true);
 initMap();
