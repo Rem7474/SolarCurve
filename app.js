@@ -10,6 +10,7 @@ const daySlider = document.getElementById('daySlider');
 const dayLabel = document.getElementById('dayLabel');
 const latInput = document.getElementById('lat');
 const lonInput = document.getElementById('lon');
+const azimuthInput = document.getElementById('azimuth');
 const mapHintEl = document.getElementById('mapHint');
 
 let dailyProfileChart;
@@ -17,6 +18,8 @@ let currentHourlyEntries = [];
 let currentDailyData = [];
 let map;
 let marker;
+let azimuthShaft;
+let azimuthHead;
 
 sourceSelect.addEventListener('change', () => {
   pvwattsKeyWrapper.classList.toggle('hidden', sourceSelect.value !== 'pvwatts');
@@ -32,6 +35,10 @@ latInput.addEventListener('change', () => {
 
 lonInput.addEventListener('change', () => {
   updateMapFromInputs();
+});
+
+azimuthInput.addEventListener('input', () => {
+  updateAzimuthArrowFromInputs();
 });
 
 geoBtn.addEventListener('click', () => {
@@ -467,6 +474,7 @@ function initMap() {
     latInput.value = lat.toFixed(5);
     lonInput.value = lng.toFixed(5);
     placeOrMoveMarker(lat, lng);
+    updateAzimuthArrowFromInputs();
     mapHintEl.textContent = `Point sélectionné : ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
   });
 
@@ -500,11 +508,100 @@ function updateMapFromInputs(centerMap = false) {
   }
 
   placeOrMoveMarker(lat, lon);
+  updateAzimuthArrowFromInputs();
   mapHintEl.textContent = `Point sélectionné : ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
 
   if (centerMap) {
     map.setView([lat, lon], 12);
   }
+}
+
+function updateAzimuthArrowFromInputs() {
+  if (!map) {
+    return;
+  }
+
+  const lat = Number(latInput.value);
+  const lon = Number(lonInput.value);
+  const azimuthSouth = Number(azimuthInput.value);
+
+  if (Number.isNaN(lat) || Number.isNaN(lon) || Number.isNaN(azimuthSouth)) {
+    clearAzimuthArrow();
+    return;
+  }
+
+  const bearing = azimuthSouthToAzimuthNorthClockwise(azimuthSouth);
+  const tip = destinationPoint(lat, lon, bearing, 220);
+  const leftHead = destinationPoint(tip.lat, tip.lon, bearing + 150, 70);
+  const rightHead = destinationPoint(tip.lat, tip.lon, bearing - 150, 70);
+
+  const shaftLatLngs = [
+    [lat, lon],
+    [tip.lat, tip.lon],
+  ];
+
+  const headLatLngs = [
+    [leftHead.lat, leftHead.lon],
+    [tip.lat, tip.lon],
+    [rightHead.lat, rightHead.lon],
+  ];
+
+  if (!azimuthShaft) {
+    azimuthShaft = L.polyline(shaftLatLngs, {
+      color: '#ef4444',
+      weight: 3,
+      opacity: 0.95,
+    }).addTo(map);
+  } else {
+    azimuthShaft.setLatLngs(shaftLatLngs);
+  }
+
+  if (!azimuthHead) {
+    azimuthHead = L.polyline(headLatLngs, {
+      color: '#ef4444',
+      weight: 3,
+      opacity: 0.95,
+    }).addTo(map);
+  } else {
+    azimuthHead.setLatLngs(headLatLngs);
+  }
+}
+
+function clearAzimuthArrow() {
+  if (azimuthShaft) {
+    map.removeLayer(azimuthShaft);
+    azimuthShaft = null;
+  }
+
+  if (azimuthHead) {
+    map.removeLayer(azimuthHead);
+    azimuthHead = null;
+  }
+}
+
+function destinationPoint(lat, lon, bearingDeg, distanceMeters) {
+  const earthRadius = 6371000;
+  const bearingRad = (bearingDeg * Math.PI) / 180;
+  const latRad = (lat * Math.PI) / 180;
+  const lonRad = (lon * Math.PI) / 180;
+  const angularDistance = distanceMeters / earthRadius;
+
+  const destLatRad = Math.asin(
+    Math.sin(latRad) * Math.cos(angularDistance) +
+      Math.cos(latRad) * Math.sin(angularDistance) * Math.cos(bearingRad)
+  );
+
+  const destLonRad =
+    lonRad +
+    Math.atan2(
+      Math.sin(bearingRad) * Math.sin(angularDistance) * Math.cos(latRad),
+      Math.cos(angularDistance) - Math.sin(latRad) * Math.sin(destLatRad)
+    );
+
+  return {
+    lat: (destLatRad * 180) / Math.PI,
+    lon: (destLonRad * 180) / Math.PI,
+  };
 }
 
 initMap();
