@@ -711,10 +711,12 @@ function updateAzimuthArrowFromInputs() {
     azimuthSouth,
     '#ef4444',
     azimuthShaft,
-    azimuthHead
+    azimuthHead,
+    azimuthHandle
   );
   azimuthShaft = primaryLayers.shaft;
   azimuthHead = primaryLayers.head;
+  azimuthHandle = primaryLayers.handle;
 
   if (compareEnabled && !Number.isNaN(azimuthSouth2)) {
     const secondaryLayers = updateArrowLayer(
@@ -723,10 +725,12 @@ function updateAzimuthArrowFromInputs() {
       azimuthSouth2,
       '#2563eb',
       azimuthSecondaryShaft,
-      azimuthSecondaryHead
+      azimuthSecondaryHead,
+      azimuthSecondaryHandle
     );
     azimuthSecondaryShaft = secondaryLayers.shaft;
     azimuthSecondaryHead = secondaryLayers.head;
+    azimuthSecondaryHandle = secondaryLayers.handle;
   } else {
     clearSecondaryAzimuthArrow();
   }
@@ -743,6 +747,11 @@ function clearAzimuthArrow() {
     azimuthHead = null;
   }
 
+  if (azimuthHandle) {
+    map.removeLayer(azimuthHandle);
+    azimuthHandle = null;
+  }
+
   clearSecondaryAzimuthArrow();
 }
 
@@ -756,8 +765,14 @@ function clearSecondaryAzimuthArrow() {
     map.removeLayer(azimuthSecondaryHead);
     azimuthSecondaryHead = null;
   }
+  if (azimuthSecondaryHandle) {
+    map.removeLayer(azimuthSecondaryHandle);
+    azimuthSecondaryHandle = null;
+  }
 }
 
+function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer, handleMarker) {
+  // Calculs géométriques d'abord (évite l'utilisation de variables non initialisées)
   const bearing = azimuthSouthToAzimuthNorthClockwise(azimuthSouth);
   const tip = destinationPoint(lat, lon, bearing, 220);
   const leftHead = destinationPoint(tip.lat, tip.lon, bearing + 150, 70);
@@ -814,7 +829,7 @@ function clearSecondaryAzimuthArrow() {
     headLayer.setLatLngs(headLatLngs);
   }
 
-  // Handle interactif
+  // Handle interactif (éviter de rattacher plusieurs fois les handlers)
   if (handleCreated) {
     handleMarker.on('mousedown', function (e) {
       if (!map) return;
