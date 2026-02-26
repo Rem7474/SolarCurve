@@ -175,3 +175,19 @@ button:disabled {
 .hidden {
   display: none;
 }
+
+/* Handle azimuth: small black dot, large clickable area */
+.az-handle-icon {
+  width: 28px;
+  height: 28px;
+  display: block;
+}
+.az-handle-icon .az-handle-dot {
+  width: 6px;
+  height: 6px;
+  background: #000;
+  border-radius: 50%;
+  display: block;
+  margin: 11px auto;
+}
+.az-handle-icon { cursor: pointer; }

@@ -787,16 +787,14 @@ function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer, 
   // Crée le handle une seule fois et le réutilise
   let handleCreated = false;
   if (!handleMarker) {
-    handleMarker = L.circleMarker([tip.lat, tip.lon], {
-      radius: 10,
-      color: color,
-      fillColor: '#fff',
-      fillOpacity: 1,
-      weight: 2,
-      interactive: true,
-      draggable: false,
-      bubblingMouseEvents: true,
-    }).addTo(map);
+    // create a DivIcon so we have a small visible dot and a larger clickable area
+    const icon = L.divIcon({
+      className: 'az-handle-icon',
+      html: '<span class="az-handle-dot"></span>',
+      iconSize: [28, 28],
+      iconAnchor: [14, 14],
+    });
+    handleMarker = L.marker([tip.lat, tip.lon], { icon, interactive: true }).addTo(map);
     handleCreated = true;
   } else {
     handleMarker.setLatLng([tip.lat, tip.lon]);
@@ -892,6 +890,12 @@ function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer, 
               if (map.boxZoom) map.boxZoom.enable();
             } catch {}
           }, 50);
+
+          // Snap handle exactly to arrow tip
+          try {
+            handleMarker.setLatLng([tip.lat, tip.lon]);
+            updateAzimuthArrowFromInputs();
+          } catch {}
 
           // Toujours supprimer le clic carte généré; laisser une petite fenêtre
           setTimeout(() => {
