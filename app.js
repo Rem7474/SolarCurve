@@ -29,6 +29,8 @@ let azimuthShaft;
 let azimuthHead;
 let azimuthSecondaryShaft;
 let azimuthSecondaryHead;
+let azimuthHandle = null;
+let azimuthSecondaryHandle = null;
 
 sourceSelect.addEventListener('change', () => {
   pvwattsKeyWrapper.classList.toggle('hidden', sourceSelect.value !== 'pvwatts');
@@ -756,7 +758,7 @@ function clearSecondaryAzimuthArrow() {
   }
 }
 
-function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer) {
+function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer, handleMarker) {
   const bearing = azimuthSouthToAzimuthNorthClockwise(azimuthSouth);
   const tip = destinationPoint(lat, lon, bearing, 220);
   const leftHead = destinationPoint(tip.lat, tip.lon, bearing + 150, 70);
@@ -773,14 +775,41 @@ function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer) 
     [rightHead.lat, rightHead.lon],
   ];
 
+  // Flèche
   if (!shaftLayer) {
     shaftLayer = L.polyline(shaftLatLngs, {
       color,
       weight: 3,
       opacity: 0.95,
     }).addTo(map);
-    // Ajout d'un event pour rotation par drag
-    shaftLayer.on('mousedown', function (e) {
+  } else {
+    shaftLayer.setLatLngs(shaftLatLngs);
+  }
+
+  // Tête
+  if (!headLayer) {
+    headLayer = L.polyline(headLatLngs, {
+      color,
+      weight: 3,
+      opacity: 0.95,
+    }).addTo(map);
+  } else {
+    headLayer.setLatLngs(headLatLngs);
+  }
+
+  // Handle interactif
+  if (!handleMarker) {
+    handleMarker = L.circleMarker([tip.lat, tip.lon], {
+      radius: 10,
+      color: color,
+      fillColor: '#fff',
+      fillOpacity: 1,
+      weight: 2,
+      interactive: true,
+      draggable: true,
+      bubblingMouseEvents: true,
+    }).addTo(map);
+    handleMarker.on('mousedown', function (e) {
       if (!map) return;
       map.dragging.disable();
       const markerLatLng = marker.getLatLng();
@@ -795,30 +824,23 @@ function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer) 
         azimuthInput.value = String(azimuthNorthClockwiseToAzimuthSouth(bearing));
         setAutoOppositeAzimuth();
         updateAzimuthArrowFromInputs();
+        handleMarker.setLatLng([latlng.lat, latlng.lng]);
+        mapHintEl.textContent = `Azimut en cours : ${azimuthInput.value}°`;
       }
       function onMouseUp(ev) {
         map.dragging.enable();
         map.off('mousemove', onMouseMove);
         map.off('mouseup', onMouseUp);
+        mapHintEl.textContent = `Azimut ajusté : ${azimuthInput.value}°`;
       }
       map.on('mousemove', onMouseMove);
       map.on('mouseup', onMouseUp);
     });
   } else {
-    shaftLayer.setLatLngs(shaftLatLngs);
+    handleMarker.setLatLng([tip.lat, tip.lon]);
   }
 
-  if (!headLayer) {
-    headLayer = L.polyline(headLatLngs, {
-      color,
-      weight: 3,
-      opacity: 0.95,
-    }).addTo(map);
-  } else {
-    headLayer.setLatLngs(headLatLngs);
-  }
-
-  return { shaft: shaftLayer, head: headLayer };
+  return { shaft: shaftLayer, head: headLayer, handle: handleMarker };
 }
 
 function bearingBetweenPoints(lat1, lon1, lat2, lon2) {
