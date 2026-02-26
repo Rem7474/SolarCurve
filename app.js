@@ -759,10 +759,22 @@ function clearSecondaryAzimuthArrow() {
 }
 
 function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer, handleMarker) {
-  // Supprime le handle existant avant d'en créer un nouveau
-  if (handleMarker) {
-    map.removeLayer(handleMarker);
-    handleMarker = null;
+  // Crée le handle une seule fois et le réutilise
+  let handleCreated = false;
+  if (!handleMarker) {
+    handleMarker = L.circleMarker([tip.lat, tip.lon], {
+      radius: 10,
+      color: color,
+      fillColor: '#fff',
+      fillOpacity: 1,
+      weight: 2,
+      interactive: true,
+      draggable: false,
+      bubblingMouseEvents: true,
+    }).addTo(map);
+    handleCreated = true;
+  } else {
+    handleMarker.setLatLng([tip.lat, tip.lon]);
   }
   const bearing = azimuthSouthToAzimuthNorthClockwise(azimuthSouth);
   const tip = destinationPoint(lat, lon, bearing, 220);
@@ -803,43 +815,38 @@ function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer, 
   }
 
   // Handle interactif
-  handleMarker = L.circleMarker([tip.lat, tip.lon], {
-    radius: 10,
-    color: color,
-    fillColor: '#fff',
-    fillOpacity: 1,
-    weight: 2,
-    interactive: true,
-    draggable: true,
-    bubblingMouseEvents: true,
-  }).addTo(map);
-  handleMarker.on('mousedown', function (e) {
-    if (!map) return;
-    map.dragging.disable();
-    const markerLatLng = marker.getLatLng();
-    function onMouseMove(ev) {
-      const latlng = map.mouseEventToLatLng(ev.originalEvent || ev);
-      const bearing = bearingBetweenPoints(
-        markerLatLng.lat,
-        markerLatLng.lng,
-        latlng.lat,
-        latlng.lng
-      );
-      azimuthInput.value = String(azimuthNorthClockwiseToAzimuthSouth(bearing));
-      setAutoOppositeAzimuth();
-      updateAzimuthArrowFromInputs();
-      handleMarker.setLatLng([latlng.lat, latlng.lng]);
-      mapHintEl.textContent = `Azimut en cours : ${azimuthInput.value}°`;
-    }
-    function onMouseUp(ev) {
-      map.dragging.enable();
-      map.off('mousemove', onMouseMove);
-      map.off('mouseup', onMouseUp);
-      mapHintEl.textContent = `Azimut ajusté : ${azimuthInput.value}°`;
-    }
-    map.on('mousemove', onMouseMove);
-    map.on('mouseup', onMouseUp);
-  });
+  if (handleCreated) {
+    handleMarker.on('mousedown', function (e) {
+      if (!map) return;
+      map.dragging.disable();
+      e.originalEvent.stopPropagation();
+      const markerLatLng = marker.getLatLng();
+      function onMouseMove(ev) {
+        ev.originalEvent.stopPropagation();
+        const latlng = map.mouseEventToLatLng(ev.originalEvent || ev);
+        const bearing = bearingBetweenPoints(
+          markerLatLng.lat,
+          markerLatLng.lng,
+          latlng.lat,
+          latlng.lng
+        );
+        azimuthInput.value = String(azimuthNorthClockwiseToAzimuthSouth(bearing));
+        setAutoOppositeAzimuth();
+        updateAzimuthArrowFromInputs();
+        handleMarker.setLatLng([latlng.lat, latlng.lng]);
+        mapHintEl.textContent = `Azimut en cours : ${azimuthInput.value}°`;
+      }
+      function onMouseUp(ev) {
+        ev.originalEvent.stopPropagation();
+        map.dragging.enable();
+        map.off('mousemove', onMouseMove);
+        map.off('mouseup', onMouseUp);
+        mapHintEl.textContent = `Azimut ajusté : ${azimuthInput.value}°`;
+      }
+      map.on('mousemove', onMouseMove);
+      map.on('mouseup', onMouseUp);
+    });
+  }
 
   return { shaft: shaftLayer, head: headLayer, handle: handleMarker };
 }
