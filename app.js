@@ -160,6 +160,7 @@ async function fetchFromPVGIS({ lat, lon, peakPower, tilt, azimuth, losses }) {
   const params = new URLSearchParams({
     lat: String(lat),
     lon: String(lon),
+    pvcalculation: '1',
     peakpower: String(peakPower),
     loss: String(losses),
     angle: String(tilt),
@@ -186,9 +187,13 @@ async function fetchFromPVGIS({ lat, lon, peakPower, tilt, azimuth, losses }) {
   }
 
   const hourlyEntries = [];
+  let hasPowerColumn = false;
 
   for (const row of hourly) {
-    const powerW = Number(row.P);
+    const powerW = Number(row.P ?? row.p ?? row['Pdc'] ?? row['Pac']);
+    if (!Number.isNaN(powerW)) {
+      hasPowerColumn = true;
+    }
     if (Number.isNaN(powerW)) {
       continue;
     }
@@ -204,6 +209,12 @@ async function fetchFromPVGIS({ lat, lon, peakPower, tilt, azimuth, losses }) {
       hour: parsedTime.hour,
       kwh: powerW / 1000,
     });
+  }
+
+  if (!hasPowerColumn) {
+    throw new Error(
+      "PVGIS n'a pas renvoyé de puissance PV (champ P). Vérifie le proxy /api/pvgis et les paramètres de calcul PV."
+    );
   }
 
   return {

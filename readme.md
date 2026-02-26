@@ -67,6 +67,7 @@ Ce fallback est pratique en test, mais non recommandé pour la production (dépe
 ### PVGIS
 - Gratuit, sans clé API.
 - Endpoint utilisé : `https://re.jrc.ec.europa.eu/api/v5_3/seriescalc`
+- Paramètre clé activé : `pvcalculation=1` (sinon PVGIS peut ne renvoyer que l'irradiation sans puissance PV `P`).
 - Période calculée : année de référence 2020, pas horaire.
 - Les données horaires sont agrégées en production quotidienne.
 
