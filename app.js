@@ -779,6 +779,31 @@ function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer) 
       weight: 3,
       opacity: 0.95,
     }).addTo(map);
+    // Ajout d'un event pour rotation par drag
+    shaftLayer.on('mousedown', function (e) {
+      if (!map) return;
+      map.dragging.disable();
+      const markerLatLng = marker.getLatLng();
+      function onMouseMove(ev) {
+        const latlng = map.mouseEventToLatLng(ev.originalEvent || ev);
+        const bearing = bearingBetweenPoints(
+          markerLatLng.lat,
+          markerLatLng.lng,
+          latlng.lat,
+          latlng.lng
+        );
+        azimuthInput.value = String(azimuthNorthClockwiseToAzimuthSouth(bearing));
+        setAutoOppositeAzimuth();
+        updateAzimuthArrowFromInputs();
+      }
+      function onMouseUp(ev) {
+        map.dragging.enable();
+        map.off('mousemove', onMouseMove);
+        map.off('mouseup', onMouseUp);
+      }
+      map.on('mousemove', onMouseMove);
+      map.on('mouseup', onMouseUp);
+    });
   } else {
     shaftLayer.setLatLngs(shaftLatLngs);
   }
