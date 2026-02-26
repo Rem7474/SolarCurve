@@ -758,7 +758,11 @@ function clearSecondaryAzimuthArrow() {
   }
 }
 
-function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer, handleMarker) {
+  const bearing = azimuthSouthToAzimuthNorthClockwise(azimuthSouth);
+  const tip = destinationPoint(lat, lon, bearing, 220);
+  const leftHead = destinationPoint(tip.lat, tip.lon, bearing + 150, 70);
+  const rightHead = destinationPoint(tip.lat, tip.lon, bearing - 150, 70);
+
   // Crée le handle une seule fois et le réutilise
   let handleCreated = false;
   if (!handleMarker) {
@@ -776,10 +780,6 @@ function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer, 
   } else {
     handleMarker.setLatLng([tip.lat, tip.lon]);
   }
-  const bearing = azimuthSouthToAzimuthNorthClockwise(azimuthSouth);
-  const tip = destinationPoint(lat, lon, bearing, 220);
-  const leftHead = destinationPoint(tip.lat, tip.lon, bearing + 150, 70);
-  const rightHead = destinationPoint(tip.lat, tip.lon, bearing - 150, 70);
 
   const shaftLatLngs = [
     [lat, lon],
