@@ -48,6 +48,17 @@
             <small>Convention app : 0=sud, -90=est, +90=ouest</small>
           </label>
 
+          <label class="check-label">
+            <input id="compareAzimuth" name="compareAzimuth" type="checkbox" />
+            Comparer avec un 2e azimut
+          </label>
+
+          <label id="azimuth2-wrapper" class="hidden">
+            Azimut 2 (°)
+            <input id="azimuth2" name="azimuth2" type="number" min="-180" max="180" value="90" disabled />
+            <small>Courbe superposée</small>
+          </label>
+
           <label>
             Pertes (%)
             <input id="losses" name="losses" type="number" min="0" max="100" step="0.1" value="14" required />

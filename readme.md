@@ -29,6 +29,7 @@ Puis ouvrir `http://localhost:8000`.
 1. Saisir latitude/longitude (ou bouton géolocalisation).
 	- Vous pouvez aussi cliquer directement sur la carte pour positionner le point GPS.
 2. Saisir puissance, inclinaison, azimut et pertes.
+   - Optionnel : activer **Comparer avec un 2e azimut** pour superposer deux courbes.
 3. Choisir la source de données :
 	- PVGIS (par défaut)
 	- PVWatts (si vous avez une clé API NREL)
@@ -37,6 +38,8 @@ Puis ouvrir `http://localhost:8000`.
 Résultats :
 - Affichage d'une **seule courbe journalière à la fois** (24 points horaires).
 - Slider de jour pour parcourir les jours calculés de l'année.
+- Superposition possible de deux courbes avec **2 azimuts différents**.
+- En mode comparaison, affichage d'une courbe **somme** (azimut 1 + azimut 2).
 - Superposition des courbes limites : **21 juin** (été) et **21 décembre** (hiver).
 - Totaux annuels, moyenne journalière, meilleur et plus faible jour.
 

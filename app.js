@@ -11,11 +11,18 @@ const dayLabel = document.getElementById('dayLabel');
 const latInput = document.getElementById('lat');
 const lonInput = document.getElementById('lon');
 const azimuthInput = document.getElementById('azimuth');
+const compareAzimuthCheckbox = document.getElementById('compareAzimuth');
+const azimuth2Wrapper = document.getElementById('azimuth2-wrapper');
+const azimuth2Input = document.getElementById('azimuth2');
 const mapHintEl = document.getElementById('mapHint');
 
 let dailyProfileChart;
-let currentHourlyEntries = [];
-let currentDailyData = [];
+let currentPrimaryHourlyEntries = [];
+let currentPrimaryDailyData = [];
+let currentSecondaryHourlyEntries = [];
+let currentSecondaryDailyData = [];
+let currentPrimaryAzimuth = null;
+let currentSecondaryAzimuth = null;
 let map;
 let marker;
 let azimuthShaft;
@@ -23,6 +30,12 @@ let azimuthHead;
 
 sourceSelect.addEventListener('change', () => {
   pvwattsKeyWrapper.classList.toggle('hidden', sourceSelect.value !== 'pvwatts');
+});
+
+compareAzimuthCheckbox.addEventListener('change', () => {
+  const enabled = compareAzimuthCheckbox.checked;
+  azimuth2Wrapper.classList.toggle('hidden', !enabled);
+  azimuth2Input.disabled = !enabled;
 });
 
 daySlider.addEventListener('input', () => {
@@ -74,20 +87,41 @@ form.addEventListener('submit', async (event) => {
   setStatus('Calcul en cours...');
 
   try {
-    const result =
-      params.source === 'pvgis' ? await fetchFromPVGIS(params) : await fetchFromPVWatts(params);
-    const { dailyData, hourlyEntries } = result;
+    const primaryResult = await fetchFromSource(params);
+
+    let secondaryResult = null;
+    if (params.compareAzimuth) {
+      secondaryResult = await fetchFromSource({
+        ...params,
+        azimuth: params.azimuth2,
+      });
+    }
+
+    const { dailyData, hourlyEntries } = primaryResult;
 
     if (!dailyData.length) {
       throw new Error('Aucune donnée de production reçue.');
     }
 
-    currentHourlyEntries = hourlyEntries;
-    currentDailyData = dailyData;
-    renderStats(dailyData);
+    if (secondaryResult && !secondaryResult.dailyData.length) {
+      throw new Error('Aucune donnée de production reçue pour le 2e azimut.');
+    }
+
+    currentPrimaryHourlyEntries = hourlyEntries;
+    currentPrimaryDailyData = dailyData;
+    currentSecondaryHourlyEntries = secondaryResult?.hourlyEntries ?? [];
+    currentSecondaryDailyData = secondaryResult?.dailyData ?? [];
+    currentPrimaryAzimuth = params.azimuth;
+    currentSecondaryAzimuth = params.compareAzimuth ? params.azimuth2 : null;
+
+    renderStats(dailyData, secondaryResult?.dailyData ?? null);
     daySlider.disabled = false;
     daySlider.min = '1';
-    daySlider.max = String(dailyData.length);
+    daySlider.max = String(
+      params.compareAzimuth
+        ? Math.min(dailyData.length, secondaryResult.dailyData.length)
+        : dailyData.length
+    );
     daySlider.value = '1';
     updateSelectedDayChart();
     setStatus(`Estimation terminée (${params.source.toUpperCase()}).`);
@@ -105,6 +139,8 @@ function getInputs() {
   const peakPower = Number(document.getElementById('peakPower').value);
   const tilt = Number(document.getElementById('tilt').value);
   const azimuth = Number(document.getElementById('azimuth').value);
+  const compareAzimuth = compareAzimuthCheckbox.checked;
+  const azimuth2 = Number(azimuth2Input.value);
   const losses = Number(document.getElementById('losses').value);
   const source = sourceSelect.value;
   const pvwattsKey = document.getElementById('pvwattsKey').value.trim();
@@ -134,16 +170,27 @@ function getInputs() {
     return null;
   }
 
+  if (compareAzimuth && (Number.isNaN(azimuth2) || azimuth2 < -180 || azimuth2 > 180)) {
+    setStatus('Azimut 2 hors limites.', true);
+    return null;
+  }
+
   return {
     lat,
     lon,
     peakPower,
     tilt,
     azimuth,
+    compareAzimuth,
+    azimuth2,
     losses,
     source,
     pvwattsKey,
   };
+}
+
+async function fetchFromSource(params) {
+  return params.source === 'pvgis' ? fetchFromPVGIS(params) : fetchFromPVWatts(params);
 }
 
 async function fetchFromPVGIS({ lat, lon, peakPower, tilt, azimuth, losses }) {
@@ -325,28 +372,33 @@ function azimuthSouthToAzimuthNorthClockwise(azimuthSouth) {
 
 function updateSelectedDayChart() {
   const selectedIndex = Number(daySlider.value) - 1;
-  if (!currentHourlyEntries.length || !currentDailyData.length || Number.isNaN(selectedIndex)) {
+  if (
+    !currentPrimaryHourlyEntries.length ||
+    !currentPrimaryDailyData.length ||
+    Number.isNaN(selectedIndex)
+  ) {
     return;
   }
 
-  const selectedDay = currentDailyData[selectedIndex];
+  const selectedDay = currentPrimaryDailyData[selectedIndex];
   if (!selectedDay) {
     return;
   }
 
   dayLabel.textContent = formatDayLabel(selectedDay.day);
 
-  const selectedProfile = buildSpecificDayProfile(currentHourlyEntries, selectedDay.day);
-  const juneLimit = buildSpecificDayProfile(currentHourlyEntries, '2020-06-21');
-  const decemberLimit = buildSpecificDayProfile(currentHourlyEntries, '2020-12-21');
+  const selectedProfile = buildSpecificDayProfile(currentPrimaryHourlyEntries, selectedDay.day);
+  const secondaryProfile = currentSecondaryHourlyEntries.length
+    ? buildSpecificDayProfile(currentSecondaryHourlyEntries, selectedDay.day)
+    : null;
+  const juneLimit = buildSpecificDayProfile(currentPrimaryHourlyEntries, '2020-06-21');
+  const decemberLimit = buildSpecificDayProfile(currentPrimaryHourlyEntries, '2020-12-21');
   const labels = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}h`);
+  const datasets = buildDailyDatasets(selectedProfile, secondaryProfile, juneLimit, decemberLimit);
 
   if (dailyProfileChart) {
     dailyProfileChart.data.labels = labels;
-    dailyProfileChart.data.datasets[0].data = selectedProfile;
-    dailyProfileChart.data.datasets[0].label = `Jour sélectionné (${dayLabel.textContent})`;
-    dailyProfileChart.data.datasets[1].data = juneLimit;
-    dailyProfileChart.data.datasets[2].data = decemberLimit;
+    dailyProfileChart.data.datasets = datasets;
     dailyProfileChart.update();
     return;
   }
@@ -355,31 +407,7 @@ function updateSelectedDayChart() {
     type: 'line',
     data: {
       labels,
-      datasets: [
-        {
-          label: `Jour sélectionné (${dayLabel.textContent})`,
-          data: selectedProfile,
-          borderWidth: 2.2,
-          tension: 0.2,
-          pointRadius: 0,
-        },
-        {
-          label: 'Limite été (21 juin)',
-          data: juneLimit,
-          borderWidth: 1.8,
-          borderDash: [8, 4],
-          tension: 0.2,
-          pointRadius: 0,
-        },
-        {
-          label: 'Limite hiver (21 décembre)',
-          data: decemberLimit,
-          borderWidth: 1.8,
-          borderDash: [4, 4],
-          tension: 0.2,
-          pointRadius: 0,
-        },
-      ],
+      datasets,
     },
     options: {
       responsive: true,
@@ -396,6 +424,71 @@ function updateSelectedDayChart() {
   });
 }
 
+function buildDailyDatasets(selectedProfile, secondaryProfile, juneLimit, decemberLimit) {
+  const datasets = [
+    {
+      label: `Azimut ${currentPrimaryAzimuth}° (${dayLabel.textContent})`,
+      data: selectedProfile,
+      borderWidth: 2.2,
+      tension: 0.2,
+      pointRadius: 0,
+    },
+  ];
+
+  if (secondaryProfile) {
+    const summedProfile = sumProfiles(selectedProfile, secondaryProfile);
+
+    datasets.push({
+      label: `Azimut ${currentSecondaryAzimuth}° (${dayLabel.textContent})`,
+      data: secondaryProfile,
+      borderWidth: 2,
+      borderDash: [10, 4],
+      tension: 0.2,
+      pointRadius: 0,
+    });
+
+    datasets.push({
+      label: `Somme (${currentPrimaryAzimuth}° + ${currentSecondaryAzimuth}°)`,
+      data: summedProfile,
+      borderWidth: 2.4,
+      tension: 0.2,
+      pointRadius: 0,
+    });
+  }
+
+  datasets.push(
+    {
+      label: 'Limite été (21 juin)',
+      data: juneLimit,
+      borderWidth: 1.6,
+      borderDash: [8, 4],
+      tension: 0.2,
+      pointRadius: 0,
+    },
+    {
+      label: 'Limite hiver (21 décembre)',
+      data: decemberLimit,
+      borderWidth: 1.6,
+      borderDash: [4, 4],
+      tension: 0.2,
+      pointRadius: 0,
+    }
+  );
+
+  return datasets;
+}
+
+function sumProfiles(profileA, profileB) {
+  const size = Math.min(profileA.length, profileB.length);
+  const output = [];
+
+  for (let index = 0; index < size; index += 1) {
+    output.push(Number((profileA[index] + profileB[index]).toFixed(3)));
+  }
+
+  return output;
+}
+
 function buildSpecificDayProfile(hourlyEntries, dayKey) {
   const profile = Array.from({ length: 24 }, () => 0);
 
@@ -408,7 +501,7 @@ function buildSpecificDayProfile(hourlyEntries, dayKey) {
   return profile.map((value) => Number(value.toFixed(3)));
 }
 
-function renderStats(dailyData) {
+function renderStats(dailyData, secondaryDailyData = null) {
   const total = dailyData.reduce((acc, row) => acc + row.kwh, 0);
   const avg = total / dailyData.length;
 
@@ -416,12 +509,25 @@ function renderStats(dailyData) {
   const min = sortedByKwh[0];
   const max = sortedByKwh[sortedByKwh.length - 1];
 
-  statsEl.innerHTML = [
+  const cards = [
     statCard('Total annuel', `${total.toFixed(1)} kWh`),
     statCard('Moyenne/jour', `${avg.toFixed(2)} kWh`),
     statCard('Jour le plus faible', `${min.day} · ${min.kwh.toFixed(2)} kWh`),
     statCard('Jour le plus productif', `${max.day} · ${max.kwh.toFixed(2)} kWh`),
-  ].join('');
+  ];
+
+  if (secondaryDailyData?.length) {
+    const total2 = secondaryDailyData.reduce((acc, row) => acc + row.kwh, 0);
+    const delta = total2 - total;
+    cards.push(
+      statCard(
+        `Écart annuel (azimut ${currentSecondaryAzimuth}° - ${currentPrimaryAzimuth}°)`,
+        `${delta >= 0 ? '+' : ''}${delta.toFixed(1)} kWh`
+      )
+    );
+  }
+
+  statsEl.innerHTML = cards.join('');
 }
 
 function statCard(title, value) {
