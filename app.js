@@ -506,25 +506,27 @@ function buildDailyDatasets(selectedProfile, secondaryProfile, juneLimit, decemb
       pointRadius: 0,
     });
   }
-
-  datasets.push(
-    {
-      label: 'Limite été (21 juin)',
-      data: juneLimit,
-      borderWidth: 1.6,
-      borderDash: [8, 4],
-      tension: 0.2,
-      pointRadius: 0,
-    },
-    {
-      label: 'Limite hiver (21 décembre)',
-      data: decemberLimit,
-      borderWidth: 1.6,
-      borderDash: [4, 4],
-      tension: 0.2,
-      pointRadius: 0,
-    }
-  );
+  // Affiche les limites été/hiver uniquement quand on n'affiche pas la comparaison
+  if (!secondaryProfile) {
+    datasets.push(
+      {
+        label: 'Limite été (21 juin)',
+        data: juneLimit,
+        borderWidth: 1.6,
+        borderDash: [8, 4],
+        tension: 0.2,
+        pointRadius: 0,
+      },
+      {
+        label: 'Limite hiver (21 décembre)',
+        data: decemberLimit,
+        borderWidth: 1.6,
+        borderDash: [4, 4],
+        tension: 0.2,
+        pointRadius: 0,
+      }
+    );
+  }
 
   return datasets;
 }
