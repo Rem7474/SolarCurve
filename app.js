@@ -171,12 +171,11 @@ async function fetchFromPVGIS({ lat, lon, peakPower, tilt, azimuth, losses }) {
     mountingplace: 'free',
   });
 
-  const url = `https://re.jrc.ec.europa.eu/api/v5_3/seriescalc?${params.toString()}`;
-  const response = await fetch(url);
-
-  if (!response.ok) {
-    throw new Error(`PVGIS indisponible (${response.status}).`);
-  }
+  const response = await fetchJSONFromAPI(
+    `/api/pvgis?${params.toString()}`,
+    `https://re.jrc.ec.europa.eu/api/v5_3/seriescalc?${params.toString()}`,
+    'PVGIS'
+  );
 
   const data = await response.json();
   const hourly = data?.outputs?.hourly;
@@ -228,12 +227,11 @@ async function fetchFromPVWatts({ lat, lon, peakPower, tilt, azimuth, losses, pv
     timeframe: 'hourly',
   });
 
-  const url = `https://developer.nrel.gov/api/pvwatts/v8.json?${params.toString()}`;
-  const response = await fetch(url);
-
-  if (!response.ok) {
-    throw new Error(`PVWatts indisponible (${response.status}).`);
-  }
+  const response = await fetchJSONFromAPI(
+    `/api/pvwatts?${params.toString()}`,
+    `https://developer.nrel.gov/api/pvwatts/v8.json?${params.toString()}`,
+    'PVWatts'
+  );
 
   const data = await response.json();
   const errors = data?.errors;
@@ -269,6 +267,32 @@ async function fetchFromPVWatts({ lat, lon, peakPower, tilt, azimuth, losses, pv
     hourlyEntries,
     dailyData: aggregateDailyData(hourlyEntries),
   };
+}
+
+async function fetchJSONFromAPI(proxyUrl, directUrl, sourceName) {
+  let response;
+
+  try {
+    response = await fetch(proxyUrl);
+  } catch {
+    response = null;
+  }
+
+  if (!response || response.status === 404 || response.status === 405 || response.status === 501) {
+    try {
+      response = await fetch(directUrl);
+    } catch {
+      throw new Error(
+        `${sourceName}: blocage réseau/CORS. Utilisez un proxy serveur same-origin (ex: /api/${sourceName.toLowerCase()}).`
+      );
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(`${sourceName} indisponible (${response.status}).`);
+  }
+
+  return response;
 }
 
 function parsePVGISTime(time) {

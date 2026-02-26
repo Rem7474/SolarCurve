@@ -52,6 +52,13 @@ Résultats :
 
 ## Notes API
 
+L'application appelle d'abord des routes locales same-origin :
+- `/api/pvgis`
+- `/api/pvwatts`
+
+Cela évite le blocage CORS côté navigateur. Le fichier `server.py` fournit ces routes en local.
+Si ces routes n'existent pas en production, l'app tente un appel direct API (qui peut être bloqué par CORS selon le fournisseur).
+
 ### PVGIS
 - Gratuit, sans clé API.
 - Endpoint utilisé : `https://re.jrc.ec.europa.eu/api/v5_3/seriescalc`
@@ -78,5 +85,13 @@ La conversion interne est appliquée selon l'API choisie.
 - Estimation basée sur données météo historiques/modèles, pas une prévision en temps réel.
 - Ne remplace pas une étude de dimensionnement détaillée.
 - Les ombrages locaux fins ne sont pas modélisés ici.
+
+## Déploiement production (important CORS)
+
+Si vous déployez sur un domaine public (ex: `https://solar.remcorp.fr`), il faut exposer un proxy same-origin :
+- `GET /api/pvgis` -> proxy vers `https://re.jrc.ec.europa.eu/api/v5_3/seriescalc`
+- `GET /api/pvwatts` -> proxy vers `https://developer.nrel.gov/api/pvwatts/v8.json`
+
+Sinon, l'appel direct navigateur peut être bloqué par la politique CORS de l'API distante.
 
 
