@@ -833,11 +833,26 @@ function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer, 
   if (handleCreated) {
     handleMarker.on('mousedown', function (e) {
       if (!map) return;
-      map.dragging.disable();
-      e.originalEvent.stopPropagation();
+      // Stopper la propagation et le comportement par défaut
+      try {
+        L.DomEvent.stopPropagation(e.originalEvent);
+        L.DomEvent.preventDefault(e.originalEvent);
+      } catch {}
+
+      // Désactiver temporairement les interactions de la carte
+      try {
+        map.dragging.disable();
+        if (map.doubleClickZoom) map.doubleClickZoom.disable();
+        if (map.boxZoom) map.boxZoom.disable();
+      } catch {}
+
       const markerLatLng = marker.getLatLng();
       function onMouseMove(ev) {
-        ev.originalEvent.stopPropagation();
+        try {
+          L.DomEvent.stopPropagation(ev.originalEvent);
+          L.DomEvent.preventDefault(ev.originalEvent);
+        } catch {}
+
         const latlng = map.mouseEventToLatLng(ev.originalEvent || ev);
         const bearing = bearingBetweenPoints(
           markerLatLng.lat,
@@ -852,8 +867,20 @@ function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer, 
         mapHintEl.textContent = `Azimut en cours : ${azimuthInput.value}°`;
       }
       function onMouseUp(ev) {
-        ev.originalEvent.stopPropagation();
-        map.dragging.enable();
+        try {
+          L.DomEvent.stopPropagation(ev.originalEvent);
+          L.DomEvent.preventDefault(ev.originalEvent);
+        } catch {}
+
+        // Réactiver les interactions après un petit délai pour éviter que Leaflet n'interprète le relâchement comme un drag
+        setTimeout(() => {
+          try {
+            map.dragging.enable();
+            if (map.doubleClickZoom) map.doubleClickZoom.enable();
+            if (map.boxZoom) map.boxZoom.enable();
+          } catch {}
+        }, 50);
+
         map.off('mousemove', onMouseMove);
         map.off('mouseup', onMouseUp);
         mapHintEl.textContent = `Azimut ajusté : ${azimuthInput.value}°`;
