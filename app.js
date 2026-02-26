@@ -174,7 +174,8 @@ async function fetchFromPVGIS({ lat, lon, peakPower, tilt, azimuth, losses }) {
   const response = await fetchJSONFromAPI(
     `/api/pvgis?${params.toString()}`,
     `https://re.jrc.ec.europa.eu/api/v5_3/seriescalc?${params.toString()}`,
-    'PVGIS'
+    'PVGIS',
+    { allowAllOriginsFallback: true }
   );
 
   const data = await response.json();
@@ -269,23 +270,32 @@ async function fetchFromPVWatts({ lat, lon, peakPower, tilt, azimuth, losses, pv
   };
 }
 
-async function fetchJSONFromAPI(proxyUrl, directUrl, sourceName) {
+async function fetchJSONFromAPI(
+  proxyUrl,
+  directUrl,
+  sourceName,
+  { allowAllOriginsFallback = false } = {}
+) {
   let response;
 
-  try {
-    response = await fetch(proxyUrl);
-  } catch {
-    response = null;
-  }
+  response = await safeFetch(proxyUrl);
 
   if (!response || response.status === 404 || response.status === 405 || response.status === 501) {
-    try {
-      response = await fetch(directUrl);
-    } catch {
-      throw new Error(
-        `${sourceName}: blocage réseau/CORS. Utilisez un proxy serveur same-origin (ex: /api/${sourceName.toLowerCase()}).`
-      );
+    response = await safeFetch(directUrl);
+  }
+
+  if (!response && allowAllOriginsFallback) {
+    const wrappedUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(directUrl)}`;
+    response = await safeFetch(wrappedUrl);
+    if (response && response.ok) {
+      setStatus(`${sourceName}: fallback AllOrigins utilisé (mode secours).`);
     }
+  }
+
+  if (!response) {
+    throw new Error(
+      `${sourceName}: blocage réseau/CORS. Utilisez un proxy serveur same-origin (ex: /api/${sourceName.toLowerCase()}).`
+    );
   }
 
   if (!response.ok) {
@@ -293,6 +303,14 @@ async function fetchJSONFromAPI(proxyUrl, directUrl, sourceName) {
   }
 
   return response;
+}
+
+async function safeFetch(url) {
+  try {
+    return await fetch(url);
+  } catch {
+    return null;
+  }
 }
 
 function parsePVGISTime(time) {

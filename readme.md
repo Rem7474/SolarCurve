@@ -59,6 +59,11 @@ L'application appelle d'abord des routes locales same-origin :
 Cela évite le blocage CORS côté navigateur. Le fichier `server.py` fournit ces routes en local.
 Si ces routes n'existent pas en production, l'app tente un appel direct API (qui peut être bloqué par CORS selon le fournisseur).
 
+Pour **PVGIS uniquement**, un fallback de secours est aussi tenté via :
+- `https://api.allorigins.win/raw?url=...`
+
+Ce fallback est pratique en test, mais non recommandé pour la production (dépendance tierce externe).
+
 ### PVGIS
 - Gratuit, sans clé API.
 - Endpoint utilisé : `https://re.jrc.ec.europa.eu/api/v5_3/seriescalc`
