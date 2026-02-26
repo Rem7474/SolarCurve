@@ -24,12 +24,12 @@
         <form id="pv-form" class="form-grid">
           <label>
             Latitude
-            <input id="lat" name="lat" type="number" step="0.0001" required placeholder="ex: 42.7" />
+            <input id="lat" name="lat" type="text" inputmode="decimal" pattern="^-?\d{1,2}(?:[.,]\d{1,6})?$" required placeholder="ex: 42.7" />
           </label>
 
           <label>
             Longitude
-            <input id="lon" name="lon" type="number" step="0.0001" required placeholder="ex: 9.45" />
+            <input id="lon" name="lon" type="text" inputmode="decimal" pattern="^-?\d{1,3}(?:[.,]\d{1,6})?$" required placeholder="ex: 9.45" />
           </label>
 
           <label>

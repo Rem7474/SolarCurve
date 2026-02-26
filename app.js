@@ -145,9 +145,13 @@ form.addEventListener('submit', async (event) => {
   }
 });
 
+function parseDecimal(val) {
+  return Number(String(val).replace(',', '.'));
+}
+
 function getInputs() {
-  const lat = Number(latInput.value);
-  const lon = Number(lonInput.value);
+  const lat = parseDecimal(latInput.value);
+  const lon = parseDecimal(lonInput.value);
   const peakPower = Number(document.getElementById('peakPower').value);
   const tilt = Number(document.getElementById('tilt').value);
   const azimuth = Number(document.getElementById('azimuth').value);
