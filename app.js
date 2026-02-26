@@ -5,12 +5,49 @@ const geoBtn = document.getElementById('geo-btn');
 const estimateBtn = document.getElementById('estimate-btn');
 const statusEl = document.getElementById('status');
 const statsEl = document.getElementById('stats');
-const chartCanvas = document.getElementById('productionChart');
+const annualChartCanvas = document.getElementById('productionChart');
+const dailyProfileChartCanvas = document.getElementById('dailyProfileChart');
+const monthSlider = document.getElementById('monthSlider');
+const monthLabel = document.getElementById('monthLabel');
+const latInput = document.getElementById('lat');
+const lonInput = document.getElementById('lon');
+const mapHintEl = document.getElementById('mapHint');
 
-let chart;
+const MONTH_NAMES = [
+  'Janvier',
+  'Février',
+  'Mars',
+  'Avril',
+  'Mai',
+  'Juin',
+  'Juillet',
+  'Août',
+  'Septembre',
+  'Octobre',
+  'Novembre',
+  'Décembre',
+];
+
+let annualChart;
+let dailyProfileChart;
+let currentHourlyEntries = [];
+let map;
+let marker;
 
 sourceSelect.addEventListener('change', () => {
   pvwattsKeyWrapper.classList.toggle('hidden', sourceSelect.value !== 'pvwatts');
+});
+
+monthSlider.addEventListener('input', () => {
+  updateMonthlyProfileChart();
+});
+
+latInput.addEventListener('change', () => {
+  updateMapFromInputs();
+});
+
+lonInput.addEventListener('change', () => {
+  updateMapFromInputs();
 });
 
 geoBtn.addEventListener('click', () => {
@@ -22,8 +59,9 @@ geoBtn.addEventListener('click', () => {
   setStatus('Récupération de votre position GPS...');
   navigator.geolocation.getCurrentPosition(
     (position) => {
-      document.getElementById('lat').value = position.coords.latitude.toFixed(5);
-      document.getElementById('lon').value = position.coords.longitude.toFixed(5);
+      latInput.value = position.coords.latitude.toFixed(5);
+      lonInput.value = position.coords.longitude.toFixed(5);
+      updateMapFromInputs(true);
       setStatus('Position GPS récupérée.');
     },
     (error) => {
@@ -45,15 +83,20 @@ form.addEventListener('submit', async (event) => {
   setStatus('Calcul en cours...');
 
   try {
-    const dailyData =
+    const result =
       params.source === 'pvgis' ? await fetchFromPVGIS(params) : await fetchFromPVWatts(params);
+    const { dailyData, hourlyEntries } = result;
 
     if (!dailyData.length) {
       throw new Error('Aucune donnée de production reçue.');
     }
 
-    renderChart(dailyData);
+    currentHourlyEntries = hourlyEntries;
+    renderAnnualChart(dailyData);
     renderStats(dailyData);
+    monthSlider.disabled = false;
+    monthSlider.value = '1';
+    updateMonthlyProfileChart();
     setStatus(`Estimation terminée (${params.source.toUpperCase()}).`);
   } catch (error) {
     console.error(error);
@@ -64,8 +107,8 @@ form.addEventListener('submit', async (event) => {
 });
 
 function getInputs() {
-  const lat = Number(document.getElementById('lat').value);
-  const lon = Number(document.getElementById('lon').value);
+  const lat = Number(latInput.value);
+  const lon = Number(lonInput.value);
   const peakPower = Number(document.getElementById('peakPower').value);
   const tilt = Number(document.getElementById('tilt').value);
   const azimuth = Number(document.getElementById('azimuth').value);
@@ -142,21 +185,31 @@ async function fetchFromPVGIS({ lat, lon, peakPower, tilt, azimuth, losses }) {
     throw new Error('Réponse PVGIS invalide.');
   }
 
-  const byDay = new Map();
+  const hourlyEntries = [];
 
   for (const row of hourly) {
-    const time = row.time;
     const powerW = Number(row.P);
-    if (!time || Number.isNaN(powerW)) {
+    if (Number.isNaN(powerW)) {
       continue;
     }
 
-    const dayKey = parsePVGISTimeToDayKey(time);
-    const prev = byDay.get(dayKey) ?? 0;
-    byDay.set(dayKey, prev + powerW / 1000);
+    const parsedTime = parsePVGISTime(row.time);
+    if (!parsedTime) {
+      continue;
+    }
+
+    hourlyEntries.push({
+      dayKey: parsedTime.dayKey,
+      month: parsedTime.month,
+      hour: parsedTime.hour,
+      kwh: powerW / 1000,
+    });
   }
 
-  return mapToSortedArray(byDay);
+  return {
+    hourlyEntries,
+    dailyData: aggregateDailyData(hourlyEntries),
+  };
 }
 
 async function fetchFromPVWatts({ lat, lon, peakPower, tilt, azimuth, losses, pvwattsKey }) {
@@ -194,7 +247,7 @@ async function fetchFromPVWatts({ lat, lon, peakPower, tilt, azimuth, losses, pv
   }
 
   const year = 2020;
-  const byDay = new Map();
+  const hourlyEntries = [];
 
   for (let i = 0; i < ac.length; i += 1) {
     const powerW = Number(ac[i]);
@@ -204,27 +257,47 @@ async function fetchFromPVWatts({ lat, lon, peakPower, tilt, azimuth, losses, pv
 
     const date = new Date(Date.UTC(year, 0, 1, 0, 0, 0));
     date.setUTCHours(i);
-    const dayKey = date.toISOString().slice(0, 10);
-
-    const prev = byDay.get(dayKey) ?? 0;
-    byDay.set(dayKey, prev + powerW / 1000);
+    hourlyEntries.push({
+      dayKey: date.toISOString().slice(0, 10),
+      month: date.getUTCMonth() + 1,
+      hour: date.getUTCHours(),
+      kwh: powerW / 1000,
+    });
   }
 
-  return mapToSortedArray(byDay);
+  return {
+    hourlyEntries,
+    dailyData: aggregateDailyData(hourlyEntries),
+  };
 }
 
-function parsePVGISTimeToDayKey(time) {
-  if (typeof time === 'string' && time.length >= 8) {
-    const yyyy = time.slice(0, 4);
-    const mm = time.slice(4, 6);
-    const dd = time.slice(6, 8);
-    return `${yyyy}-${mm}-${dd}`;
+function parsePVGISTime(time) {
+  if (typeof time !== 'string') {
+    return null;
   }
-  throw new Error('Format de date PVGIS inattendu.');
+
+  const match = time.match(/^(\d{4})(\d{2})(\d{2}):?(\d{2})/);
+  if (!match) {
+    return null;
+  }
+
+  const [, yyyy, mm, dd, hh] = match;
+  return {
+    dayKey: `${yyyy}-${mm}-${dd}`,
+    month: Number(mm),
+    hour: Number(hh),
+  };
 }
 
-function mapToSortedArray(dayMap) {
-  return [...dayMap.entries()]
+function aggregateDailyData(hourlyEntries) {
+  const byDay = new Map();
+
+  for (const entry of hourlyEntries) {
+    const previous = byDay.get(entry.dayKey) ?? 0;
+    byDay.set(entry.dayKey, previous + entry.kwh);
+  }
+
+  return [...byDay.entries()]
     .sort(([dayA], [dayB]) => dayA.localeCompare(dayB))
     .map(([day, value]) => ({ day, kwh: Number(value.toFixed(3)) }));
 }
@@ -234,15 +307,15 @@ function azimuthSouthToAzimuthNorthClockwise(azimuthSouth) {
   return ((result % 360) + 360) % 360;
 }
 
-function renderChart(dailyData) {
+function renderAnnualChart(dailyData) {
   const labels = dailyData.map((row) => row.day);
   const values = dailyData.map((row) => row.kwh);
 
-  if (chart) {
-    chart.destroy();
+  if (annualChart) {
+    annualChart.destroy();
   }
 
-  chart = new Chart(chartCanvas, {
+  annualChart = new Chart(annualChartCanvas, {
     type: 'line',
     data: {
       labels,
@@ -279,6 +352,101 @@ function renderChart(dailyData) {
   });
 }
 
+function updateMonthlyProfileChart() {
+  const selectedMonth = Number(monthSlider.value);
+  if (!currentHourlyEntries.length || Number.isNaN(selectedMonth)) {
+    return;
+  }
+
+  monthLabel.textContent = MONTH_NAMES[selectedMonth - 1];
+
+  const selectedProfile = buildMonthAverageProfile(currentHourlyEntries, selectedMonth);
+  const juneLimit = buildSpecificDayProfile(currentHourlyEntries, '2020-06-21');
+  const decemberLimit = buildSpecificDayProfile(currentHourlyEntries, '2020-12-21');
+  const labels = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}h`);
+
+  if (dailyProfileChart) {
+    dailyProfileChart.data.labels = labels;
+    dailyProfileChart.data.datasets[0].data = selectedProfile;
+    dailyProfileChart.data.datasets[0].label = `Mois sélectionné (${MONTH_NAMES[selectedMonth - 1]})`;
+    dailyProfileChart.data.datasets[1].data = juneLimit;
+    dailyProfileChart.data.datasets[2].data = decemberLimit;
+    dailyProfileChart.update();
+    return;
+  }
+
+  dailyProfileChart = new Chart(dailyProfileChartCanvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: `Mois sélectionné (${MONTH_NAMES[selectedMonth - 1]})`,
+          data: selectedProfile,
+          borderWidth: 2.2,
+          tension: 0.2,
+          pointRadius: 0,
+        },
+        {
+          label: 'Limite été (21 juin)',
+          data: juneLimit,
+          borderWidth: 1.8,
+          borderDash: [8, 4],
+          tension: 0.2,
+          pointRadius: 0,
+        },
+        {
+          label: 'Limite hiver (21 décembre)',
+          data: decemberLimit,
+          borderWidth: 1.8,
+          borderDash: [4, 4],
+          tension: 0.2,
+          pointRadius: 0,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          title: {
+            display: true,
+            text: 'kWh / heure',
+          },
+        },
+      },
+    },
+  });
+}
+
+function buildMonthAverageProfile(hourlyEntries, month) {
+  const totals = Array.from({ length: 24 }, () => 0);
+  const counts = Array.from({ length: 24 }, () => 0);
+
+  for (const entry of hourlyEntries) {
+    if (entry.month !== month) {
+      continue;
+    }
+    totals[entry.hour] += entry.kwh;
+    counts[entry.hour] += 1;
+  }
+
+  return totals.map((total, hour) => Number((counts[hour] ? total / counts[hour] : 0).toFixed(3)));
+}
+
+function buildSpecificDayProfile(hourlyEntries, dayKey) {
+  const profile = Array.from({ length: 24 }, () => 0);
+
+  for (const entry of hourlyEntries) {
+    if (entry.dayKey === dayKey) {
+      profile[entry.hour] += entry.kwh;
+    }
+  }
+
+  return profile.map((value) => Number(value.toFixed(3)));
+}
+
 function renderStats(dailyData) {
   const total = dailyData.reduce((acc, row) => acc + row.kwh, 0);
   const avg = total / dailyData.length;
@@ -308,3 +476,66 @@ function toggleLoading(isLoading) {
   estimateBtn.disabled = isLoading;
   estimateBtn.textContent = isLoading ? 'Calcul...' : 'Estimer la courbe annuelle';
 }
+
+function initMap() {
+  if (typeof L === 'undefined') {
+    mapHintEl.textContent = 'Carte non disponible (Leaflet non chargé).';
+    return;
+  }
+
+  const defaultLat = Number(latInput.value) || 42.7;
+  const defaultLon = Number(lonInput.value) || 9.45;
+
+  map = L.map('map').setView([defaultLat, defaultLon], 8);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors',
+  }).addTo(map);
+
+  map.on('click', (event) => {
+    const { lat, lng } = event.latlng;
+    latInput.value = lat.toFixed(5);
+    lonInput.value = lng.toFixed(5);
+    placeOrMoveMarker(lat, lng);
+    mapHintEl.textContent = `Point sélectionné : ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  });
+
+  if (!Number.isNaN(Number(latInput.value)) && !Number.isNaN(Number(lonInput.value))) {
+    updateMapFromInputs();
+  }
+}
+
+function placeOrMoveMarker(lat, lon) {
+  if (!map) {
+    return;
+  }
+
+  if (!marker) {
+    marker = L.marker([lat, lon]).addTo(map);
+  } else {
+    marker.setLatLng([lat, lon]);
+  }
+}
+
+function updateMapFromInputs(centerMap = false) {
+  if (!map) {
+    return;
+  }
+
+  const lat = Number(latInput.value);
+  const lon = Number(lonInput.value);
+
+  if (Number.isNaN(lat) || Number.isNaN(lon)) {
+    return;
+  }
+
+  placeOrMoveMarker(lat, lon);
+  mapHintEl.textContent = `Point sélectionné : ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+
+  if (centerMap) {
+    map.setView([lat, lon], 12);
+  }
+}
+
+initMap();

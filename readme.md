@@ -18,17 +18,26 @@ Option 1 (simple) :
 
 Option 2 (recommandée, éviter certains soucis CORS selon navigateur) :
 1. Lancer un serveur local depuis le dossier du projet.
-2. Exemple avec Python :
+2. Mini serveur Python avec CORS inclus :
+
+```bash
+python server.py
+```
+
+3. Ouvrir `http://127.0.0.1:8000`.
+
+Option 3 (serveur Python standard) :
 
 ```bash
 python -m http.server 8000
 ```
 
-3. Ouvrir `http://localhost:8000`.
+Puis ouvrir `http://localhost:8000`.
 
 ## Utilisation
 
 1. Saisir latitude/longitude (ou bouton géolocalisation).
+	- Vous pouvez aussi cliquer directement sur la carte pour positionner le point GPS.
 2. Saisir puissance, inclinaison, azimut et pertes.
 3. Choisir la source de données :
 	- PVGIS (par défaut)
@@ -37,6 +46,8 @@ python -m http.server 8000
 
 Résultats :
 - Courbe **kWh/jour** sur 365 jours.
+- Slider mensuel (janvier → décembre) pour visualiser le **profil journalier horaire** moyen du mois sélectionné.
+- Superposition des courbes limites : **21 juin** (été) et **21 décembre** (hiver).
 - Totaux annuels, moyenne journalière, meilleur et plus faible jour.
 
 ## Notes API

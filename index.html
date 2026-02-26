@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SolarCurve - Estimation photovoltaïque</title>
     <link rel="stylesheet" href="styles.css" />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
   <body>
@@ -65,15 +71,33 @@
             <button id="estimate-btn" type="submit">Estimer la courbe annuelle</button>
           </div>
         </form>
+
+        <h2 class="chart-title">Carte (cliquer pour choisir le point GPS)</h2>
+        <div id="map" class="map"></div>
+        <p id="mapHint" class="map-hint">Aucun point sélectionné sur la carte.</p>
       </section>
 
       <section class="card">
         <div id="status" class="status">Prêt.</div>
         <div id="stats" class="stats"></div>
+        <h2 class="chart-title">Production journalière sur l'année</h2>
         <canvas id="productionChart" height="110"></canvas>
+
+        <h2 class="chart-title">Profil journalier (heure par heure)</h2>
+        <div class="slider-row">
+          <label for="monthSlider">Mois</label>
+          <input id="monthSlider" type="range" min="1" max="12" step="1" value="1" disabled />
+          <span id="monthLabel">Janvier</span>
+        </div>
+        <canvas id="dailyProfileChart" height="110"></canvas>
       </section>
     </main>
 
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
     <script src="app.js"></script>
   </body>
 </html>
