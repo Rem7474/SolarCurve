@@ -12,6 +12,7 @@
       crossorigin=""
     />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   </head>
   <body>
     <main class="container">
@@ -93,6 +94,9 @@
       <section class="card">
         <div id="status" class="status">Prêt.</div>
         <div id="stats" class="stats hidden"></div>
+        <div id="exportArea" class="hidden" style="margin-top:10px;">
+          <button id="exportPdfBtn" class="small-btn">Exporter en PDF</button>
+        </div>
 
         <div id="resultsArea" class="hidden">
         <h2 class="chart-title">Profil mensuel moyen (heure par heure)</h2>

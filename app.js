@@ -37,6 +37,7 @@ let azimuthSecondaryHead;
 let azimuthHandle = null;
 let azimuthSecondaryHandle = null;
 let suppressMapClick = false;
+const exportPdfBtn = document.getElementById('exportPdfBtn');
 
 sourceSelect.addEventListener('change', () => {
   pvwattsKeyWrapper.classList.toggle('hidden', sourceSelect.value !== 'pvwatts');
@@ -576,6 +577,185 @@ function updateMonthlyChart() {
         },
       },
     },
+  });
+}
+
+function computeMonthlyTotalsFromDaily(dailyArray) {
+  const months = Array.from({ length: 12 }, () => 0);
+  for (const row of dailyArray) {
+    const parts = String(row.day).split('-');
+    if (parts.length >= 2) {
+      const month = Number(parts[1]);
+      if (!Number.isNaN(month) && month >= 1 && month <= 12) {
+        months[month - 1] += row.kwh;
+      }
+    }
+  }
+  return months.map((v) => Number(v.toFixed(3)));
+}
+
+async function exportToPDF() {
+  try {
+    // Build monthly totals
+    const primaryMonthly = computeMonthlyTotalsFromDaily(currentPrimaryDailyData);
+    const secondaryMonthly = currentSecondaryDailyData.length
+      ? computeMonthlyTotalsFromDaily(currentSecondaryDailyData)
+      : null;
+
+    // Create offscreen canvas for chart
+    const canvas = document.createElement('canvas');
+    canvas.width = 1200;
+    canvas.height = 600;
+    canvas.style.display = 'none';
+    document.body.appendChild(canvas);
+
+    const monthsLabels = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+
+    const datasets = [
+      {
+        label: `Azimut ${currentPrimaryAzimuth}°`,
+        data: primaryMonthly,
+        backgroundColor: '#ef6a6a',
+        borderColor: '#ef4444',
+        borderWidth: 1
+      }
+    ];
+
+    if (secondaryMonthly) {
+      datasets.push({
+        label: `Azimut ${currentSecondaryAzimuth}°`,
+        data: secondaryMonthly,
+        backgroundColor: '#6aa6ff',
+        borderColor: '#2563eb',
+        borderWidth: 1
+      });
+    }
+
+    const tmpChart = new Chart(canvas.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: monthsLabels,
+        datasets,
+      },
+      options: {
+        responsive: false,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: true } },
+        scales: {
+          y: { title: { display: true, text: 'kWh' } }
+        }
+      }
+    });
+
+    // wait a tick to ensure rendering
+    await new Promise((r) => setTimeout(r, 250));
+    const imgData = canvas.toDataURL('image/png', 1.0);
+    tmpChart.destroy();
+    document.body.removeChild(canvas);
+
+    // Prepare PDF
+    const { jspdf } = window.jspdf || { jspdf: window.jspdf };
+    const doc = new jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+    const pageW = doc.internal.pageSize.getWidth();
+    let cursorY = 12;
+
+    doc.setFontSize(18);
+    doc.text('Récapitulatif SolarCurve', 14, cursorY);
+    cursorY += 8;
+
+    doc.setFontSize(11);
+    doc.text(`Date export : ${new Date().toLocaleString()}`, 14, cursorY);
+    cursorY += 8;
+
+    // Inputs summary
+    const inputs = [];
+    inputs.push(`Position: ${latInput.value || '-'} , ${lonInput.value || '-'}`);
+    inputs.push(`Puissance (Wc): ${document.getElementById('peakPower').value} W`);
+    inputs.push(`Inclinaison: ${document.getElementById('tilt').value}°`);
+    inputs.push(`Azimut 1: ${currentPrimaryAzimuth ?? document.getElementById('azimuth').value}°`);
+    if (currentSecondaryAzimuth !== null) inputs.push(`Azimut 2: ${currentSecondaryAzimuth}°`);
+    inputs.push(`Pertes: ${document.getElementById('losses').value} %`);
+
+    doc.text(inputs.join(' · '), 14, cursorY);
+    cursorY += 10;
+
+    // Insert chart image
+    const imgWmm = pageW - 28; // margins
+    const imgHmm = (imgWmm * 600) / 1200; // maintain ratio
+    doc.addImage(imgData, 'PNG', 14, cursorY, imgWmm, imgHmm);
+    cursorY += imgHmm + 6;
+
+    // Add monthly totals table summary
+    doc.setFontSize(12);
+    doc.text('Production mensuelle (kWh)', 14, cursorY);
+    cursorY += 6;
+
+    // Compute combined monthly totals for table
+    const combinedMonthly = primaryMonthly.map((v, i) => {
+      const sec = secondaryMonthly ? secondaryMonthly[i] : 0;
+      return Number((v + sec).toFixed(3));
+    });
+
+    // Table columns: Mois | Az1 | Az2 (opt) | Total
+    const colX = 14;
+    const colW = 40;
+    doc.setFontSize(10);
+    const headerY = cursorY;
+    doc.text('Mois', colX, cursorY);
+    doc.text(`Azimut ${currentPrimaryAzimuth}°`, colX + colW, cursorY);
+    if (secondaryMonthly) doc.text(`Azimut ${currentSecondaryAzimuth}°`, colX + colW * 2, cursorY);
+    doc.text('Total', colX + colW * (secondaryMonthly ? 3 : 2), cursorY);
+    cursorY += 5;
+
+    for (let i = 0; i < 12; i += 1) {
+      doc.text(monthsLabels[i], colX, cursorY);
+      doc.text(String(primaryMonthly[i].toFixed(1)), colX + colW, cursorY);
+      if (secondaryMonthly) doc.text(String(secondaryMonthly[i].toFixed(1)), colX + colW * 2, cursorY);
+      doc.text(String(combinedMonthly[i].toFixed(1)), colX + colW * (secondaryMonthly ? 3 : 2), cursorY);
+      cursorY += 5;
+      if (cursorY > 195) {
+        doc.addPage();
+        cursorY = 14;
+      }
+    }
+
+    // Overall stats
+    cursorY += 6;
+    const totalYearPrimary = primaryMonthly.reduce((a,b) => a+b, 0);
+    const totalYearSecondary = secondaryMonthly ? secondaryMonthly.reduce((a,b)=>a+b,0) : 0;
+    const totalYearCombined = totalYearPrimary + totalYearSecondary;
+    doc.setFontSize(11);
+    doc.text(`Total annuel Azimut ${currentPrimaryAzimuth}°: ${totalYearPrimary.toFixed(1)} kWh`, 14, cursorY);
+    cursorY += 6;
+    if (secondaryMonthly) {
+      doc.text(`Total annuel Azimut ${currentSecondaryAzimuth}°: ${totalYearSecondary.toFixed(1)} kWh`, 14, cursorY);
+      cursorY += 6;
+      const pct1 = totalYearCombined > 0 ? (totalYearPrimary / totalYearCombined) * 100 : 0;
+      const pct2 = totalYearCombined > 0 ? (totalYearSecondary / totalYearCombined) * 100 : 0;
+      doc.text(`% production Azimut ${currentPrimaryAzimuth}°: ${pct1.toFixed(1)} %`, 14, cursorY);
+      cursorY += 6;
+      doc.text(`% production Azimut ${currentSecondaryAzimuth}°: ${pct2.toFixed(1)} %`, 14, cursorY);
+      cursorY += 6;
+    }
+
+    // Footer / styling note
+    cursorY += 6;
+    doc.setFontSize(9);
+    doc.text('Généré par SolarCurve — présentation optimisée pour impression', 14, cursorY);
+
+    // Save PDF
+    const filename = `SolarCurve_recap_${new Date().toISOString().slice(0,10)}.pdf`;
+    doc.save(filename);
+  } catch (err) {
+    console.error('Export PDF failed', err);
+    alert('Erreur lors de la génération du PDF. Voir la console.');
+  }
+}
+
+if (exportPdfBtn) {
+  exportPdfBtn.addEventListener('click', () => {
+    exportToPDF();
   });
 }
 

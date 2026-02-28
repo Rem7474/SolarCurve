@@ -164,6 +164,13 @@ button:disabled {
   cursor: not-allowed;
 }
 
+#exportPdfBtn {
+  background: #0f172a;
+  color: #fff;
+  border: none;
+  padding: 8px 12px;
+}
+
 .chart-container canvas {
   width: 100% !important;
   height: 100% !important;
