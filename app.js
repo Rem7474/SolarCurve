@@ -773,6 +773,8 @@ function toggleLoading(isLoading) {
 
 function hideResults() {
   try {
+    const resultsArea = document.getElementById('resultsArea');
+    if (resultsArea) resultsArea.classList.add('hidden');
     statsEl.classList.add('hidden');
     const mcont = monthlyProfileChartCanvas && monthlyProfileChartCanvas.closest('.chart-container');
     const dcont = dailyProfileChartCanvas && dailyProfileChartCanvas.closest('.chart-container');
@@ -789,6 +791,8 @@ function hideResults() {
 
 function showResults() {
   try {
+    const resultsArea = document.getElementById('resultsArea');
+    if (resultsArea) resultsArea.classList.remove('hidden');
     statsEl.classList.remove('hidden');
     const mcont = monthlyProfileChartCanvas && monthlyProfileChartCanvas.closest('.chart-container');
     const dcont = dailyProfileChartCanvas && dailyProfileChartCanvas.closest('.chart-container');
