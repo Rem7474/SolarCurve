@@ -34,7 +34,7 @@
 
           <label>
             Puissance (Wc)
-            <input id="peakPower" name="peakPower" type="number" step="0.1" min="0.1" value="1" required />
+            <input id="peakPower" name="peakPower" type="number" step="1" min="1" value="1000" required />
           </label>
 
           <label>
@@ -79,7 +79,7 @@
 
           <div class="actions">
             <button id="geo-btn" type="button">Utiliser ma position</button>
-            <button id="estimate-btn" type="submit">Estimer la courbe journalière</button>
+            <button id="estimate-btn" type="submit">Estimer la production</button>
           </div>
         </form>
 
@@ -92,10 +92,10 @@
 
       <section class="card">
         <div id="status" class="status">Prêt.</div>
-        <div id="stats" class="stats"></div>
+        <div id="stats" class="stats hidden"></div>
 
         <h2 class="chart-title">Profil mensuel moyen (heure par heure)</h2>
-        <div class="month-row">
+        <div class="month-row hidden">
           <label for="monthSelect">Mois</label>
           <select id="monthSelect">
             <option value="1">Janvier</option>
@@ -112,21 +112,21 @@
             <option value="12">Décembre</option>
           </select>
         </div>
-        <div class="chart-container">
+        <div class="chart-container hidden">
           <canvas id="monthlyProfileChart"></canvas>
         </div>
 
         <h2 class="chart-title">Profil journalier (heure par heure, 1 jour à la fois)</h2>
-        <div class="slider-row">
+        <div class="slider-row hidden">
           <label for="daySlider">Jour</label>
           <input id="daySlider" type="range" min="1" max="365" step="1" value="1" disabled />
           <span id="dayLabel">-</span>
         </div>
-        <div class="day-arrow-row">
+        <div class="day-arrow-row hidden">
           <button id="prevDay" class="small-btn" title="Jour précédent">◀</button>
           <button id="nextDay" class="small-btn" title="Jour suivant">▶</button>
         </div>
-        <div class="chart-container">
+        <div class="chart-container hidden">
           <canvas id="dailyProfileChart"></canvas>
         </div>
       </section>

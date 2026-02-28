@@ -110,6 +110,8 @@ form.addEventListener('submit', async (event) => {
     return;
   }
 
+  // hide previous outputs while computing
+  hideResults();
   toggleLoading(true);
   setStatus('Calcul en cours...');
 
@@ -153,6 +155,7 @@ form.addEventListener('submit', async (event) => {
     updateSelectedDayChart();
     updateMonthlyChart();
     updateDayButtonsState();
+    showResults();
     setStatus(`Estimation terminée (${params.source.toUpperCase()}).`);
   } catch (error) {
     console.error(error);
@@ -765,7 +768,39 @@ function setStatus(message, isError = false) {
 
 function toggleLoading(isLoading) {
   estimateBtn.disabled = isLoading;
-  estimateBtn.textContent = isLoading ? 'Calcul...' : 'Estimer la courbe journalière';
+  estimateBtn.textContent = isLoading ? 'Calcul...' : 'Estimer la production';
+}
+
+function hideResults() {
+  try {
+    statsEl.classList.add('hidden');
+    const mcont = monthlyProfileChartCanvas && monthlyProfileChartCanvas.closest('.chart-container');
+    const dcont = dailyProfileChartCanvas && dailyProfileChartCanvas.closest('.chart-container');
+    if (mcont) mcont.classList.add('hidden');
+    if (dcont) dcont.classList.add('hidden');
+    const mrow = document.querySelector('.month-row');
+    const srow = document.querySelector('.slider-row');
+    const darrow = document.querySelector('.day-arrow-row');
+    if (mrow) mrow.classList.add('hidden');
+    if (srow) srow.classList.add('hidden');
+    if (darrow) darrow.classList.add('hidden');
+  } catch {}
+}
+
+function showResults() {
+  try {
+    statsEl.classList.remove('hidden');
+    const mcont = monthlyProfileChartCanvas && monthlyProfileChartCanvas.closest('.chart-container');
+    const dcont = dailyProfileChartCanvas && dailyProfileChartCanvas.closest('.chart-container');
+    if (mcont) mcont.classList.remove('hidden');
+    if (dcont) dcont.classList.remove('hidden');
+    const mrow = document.querySelector('.month-row');
+    const srow = document.querySelector('.slider-row');
+    const darrow = document.querySelector('.day-arrow-row');
+    if (mrow) mrow.classList.remove('hidden');
+    if (srow) srow.classList.remove('hidden');
+    if (darrow) darrow.classList.remove('hidden');
+  } catch {}
 }
 
 function formatDayLabel(dayKey) {
@@ -792,7 +827,7 @@ function initMap() {
   const defaultLat = Number(latInput.value) || 46.5;
   const defaultLon = Number(lonInput.value) || 2.5;
 
-  map = L.map('map').setView([defaultLat, defaultLon], 8);
+  map = L.map('map').setView([defaultLat, defaultLon], 6);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
@@ -864,7 +899,7 @@ function updateMapFromInputs(centerMap = false) {
   mapHintEl.textContent = `Point sélectionné : ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
 
   if (centerMap) {
-    map.setView([lat, lon], 12);
+    map.setView([lat, lon], 10);
   }
 }
 
@@ -953,8 +988,8 @@ function clearSecondaryAzimuthArrow() {
 function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer, handleMarker) {
   // Calculs géométriques d'abord (évite l'utilisation de variables non initialisées)
   const bearing = azimuthSouthToAzimuthNorthClockwise(azimuthSouth);
-  // Reduce arrow length/size by 60% (use scale 0.4)
-  const arrowScale = 0.4;
+  // Arrow scale: 0.5 = half size
+  const arrowScale = 0.5;
   const tip = destinationPoint(lat, lon, bearing, 220 * arrowScale);
   const leftHead = destinationPoint(tip.lat, tip.lon, bearing + 150, 70 * arrowScale);
   const rightHead = destinationPoint(tip.lat, tip.lon, bearing - 150, 70 * arrowScale);
