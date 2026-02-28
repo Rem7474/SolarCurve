@@ -132,6 +132,38 @@ button:disabled {
   max-height: 320px;
 }
 
+.month-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.month-row select {
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+}
+
+.day-arrow-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.small-btn {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  cursor: pointer;
+}
+
+.small-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .chart-container canvas {
   width: 100% !important;
   height: 100% !important;

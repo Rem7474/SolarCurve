@@ -6,6 +6,10 @@ const estimateBtn = document.getElementById('estimate-btn');
 const statusEl = document.getElementById('status');
 const statsEl = document.getElementById('stats');
 const dailyProfileChartCanvas = document.getElementById('dailyProfileChart');
+const monthlyProfileChartCanvas = document.getElementById('monthlyProfileChart');
+const monthSelect = document.getElementById('monthSelect');
+const prevDayBtn = document.getElementById('prevDay');
+const nextDayBtn = document.getElementById('nextDay');
 const daySlider = document.getElementById('daySlider');
 const dayLabel = document.getElementById('dayLabel');
 const latInput = document.getElementById('lat');
@@ -17,6 +21,7 @@ const azimuth2Input = document.getElementById('azimuth2');
 const mapHintEl = document.getElementById('mapHint');
 
 let dailyProfileChart;
+let monthlyProfileChart;
 let currentPrimaryHourlyEntries = [];
 let currentPrimaryDailyData = [];
 let currentSecondaryHourlyEntries = [];
@@ -49,7 +54,14 @@ compareAzimuthCheckbox.addEventListener('change', () => {
 
 daySlider.addEventListener('input', () => {
   updateSelectedDayChart();
+  updateDayButtonsState();
 });
+
+if (monthSelect) {
+  monthSelect.addEventListener('change', () => {
+    updateMonthlyChart();
+  });
+}
 
 latInput.addEventListener('change', () => {
   updateMapFromInputs();
@@ -139,6 +151,8 @@ form.addEventListener('submit', async (event) => {
     );
     daySlider.value = '1';
     updateSelectedDayChart();
+    updateMonthlyChart();
+    updateDayButtonsState();
     setStatus(`Estimation terminée (${params.source.toUpperCase()}).`);
   } catch (error) {
     console.error(error);
@@ -155,7 +169,9 @@ function parseDecimal(val) {
 function getInputs() {
   const lat = parseDecimal(latInput.value);
   const lon = parseDecimal(lonInput.value);
-  const peakPower = Number(document.getElementById('peakPower').value);
+  // Input is expressed in Wc (Watts-peak). Convert to kW for API calls.
+  const peakPowerInputW = Number(document.getElementById('peakPower').value);
+  const peakPower = peakPowerInputW / 1000; // kW
   const tilt = Number(document.getElementById('tilt').value);
   const azimuth = Number(document.getElementById('azimuth').value);
   const compareAzimuth = compareAzimuthCheckbox.checked;
@@ -164,7 +180,7 @@ function getInputs() {
   const source = sourceSelect.value;
   const pvwattsKey = document.getElementById('pvwattsKey').value.trim();
 
-  if ([lat, lon, peakPower, tilt, azimuth, losses].some((value) => Number.isNaN(value))) {
+  if ([lat, lon, peakPowerInputW, tilt, azimuth, losses].some((value) => Number.isNaN(value))) {
     setStatus('Merci de renseigner des valeurs numériques valides.', true);
     return null;
   }
@@ -179,7 +195,7 @@ function getInputs() {
     return null;
   }
 
-  if (peakPower <= 0 || losses < 0 || losses > 100) {
+  if (peakPowerInputW <= 0 || losses < 0 || losses > 100) {
     setStatus('Puissance/pertes invalides.', true);
     return null;
   }
@@ -475,12 +491,131 @@ function updateSelectedDayChart() {
   });
 }
 
+function buildMonthlyAverageProfile(hourlyEntries, month) {
+  const sums = Array.from({ length: 24 }, () => 0);
+  const days = new Set();
+
+  for (const e of hourlyEntries) {
+    if (e.month === month) {
+      sums[e.hour] += e.kwh;
+      days.add(e.dayKey);
+    }
+  }
+
+  const count = Math.max(1, days.size);
+  return sums.map((v) => Number((v / count).toFixed(3)));
+}
+
+function updateMonthlyChart() {
+  if (!monthlyProfileChartCanvas) return;
+  const selectedMonth = Number(monthSelect?.value) || 6;
+
+  const primaryMonthly = buildMonthlyAverageProfile(currentPrimaryHourlyEntries, selectedMonth);
+  const secondaryMonthly = currentSecondaryHourlyEntries.length
+    ? buildMonthlyAverageProfile(currentSecondaryHourlyEntries, selectedMonth)
+    : null;
+
+  const datasets = [];
+  datasets.push({
+    label: `Azimut ${currentPrimaryAzimuth}° (moyenne mois ${selectedMonth})`,
+    data: primaryMonthly,
+    borderWidth: 2.2,
+    borderColor: '#ef4444',
+    tension: 0.2,
+    pointRadius: 0,
+  });
+
+  if (secondaryMonthly) {
+    datasets.push({
+      label: `Azimut ${currentSecondaryAzimuth}° (moyenne mois ${selectedMonth})`,
+      data: secondaryMonthly,
+      borderWidth: 2,
+      borderColor: '#2563eb',
+      borderDash: [10, 4],
+      tension: 0.2,
+      pointRadius: 0,
+    });
+
+    datasets.push({
+      label: `Somme (${currentPrimaryAzimuth}° + ${currentSecondaryAzimuth}°)` ,
+      data: sumProfiles(primaryMonthly, secondaryMonthly),
+      borderWidth: 2.4,
+      borderColor: '#059669',
+      tension: 0.2,
+      pointRadius: 0,
+    });
+  }
+
+  const labels = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}h`);
+
+  if (monthlyProfileChart) {
+    monthlyProfileChart.data.labels = labels;
+    monthlyProfileChart.data.datasets = datasets;
+    monthlyProfileChart.update();
+    return;
+  }
+
+  monthlyProfileChart = new Chart(monthlyProfileChartCanvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets,
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          title: {
+            display: true,
+            text: 'kWh / heure',
+          },
+        },
+      },
+    },
+  });
+}
+
+function updateDayButtonsState() {
+  if (!daySlider) return;
+  const min = Number(daySlider.min || 1);
+  const max = Number(daySlider.max || 1);
+  const val = Number(daySlider.value || min);
+  if (prevDayBtn) prevDayBtn.disabled = val <= min || daySlider.disabled;
+  if (nextDayBtn) nextDayBtn.disabled = val >= max || daySlider.disabled;
+}
+
+if (prevDayBtn) {
+  prevDayBtn.addEventListener('click', () => {
+    if (!daySlider || daySlider.disabled) return;
+    const min = Number(daySlider.min || 1);
+    let v = Number(daySlider.value || min);
+    if (v > min) v -= 1;
+    daySlider.value = String(v);
+    updateSelectedDayChart();
+    updateDayButtonsState();
+  });
+}
+
+if (nextDayBtn) {
+  nextDayBtn.addEventListener('click', () => {
+    if (!daySlider || daySlider.disabled) return;
+    const max = Number(daySlider.max || 1);
+    let v = Number(daySlider.value || 1);
+    if (v < max) v += 1;
+    daySlider.value = String(v);
+    updateSelectedDayChart();
+    updateDayButtonsState();
+  });
+}
+
 function buildDailyDatasets(selectedProfile, secondaryProfile, juneLimit, decemberLimit) {
   const datasets = [
     {
       label: `Azimut ${currentPrimaryAzimuth}° (${dayLabel.textContent})`,
       data: selectedProfile,
       borderWidth: 2.2,
+      borderColor: '#ef4444',
       tension: 0.2,
       pointRadius: 0,
     },
@@ -493,6 +628,7 @@ function buildDailyDatasets(selectedProfile, secondaryProfile, juneLimit, decemb
       label: `Azimut ${currentSecondaryAzimuth}° (${dayLabel.textContent})`,
       data: secondaryProfile,
       borderWidth: 2,
+      borderColor: '#2563eb',
       borderDash: [10, 4],
       tension: 0.2,
       pointRadius: 0,
@@ -502,6 +638,7 @@ function buildDailyDatasets(selectedProfile, secondaryProfile, juneLimit, decemb
       label: `Somme (${currentPrimaryAzimuth}° + ${currentSecondaryAzimuth}°)`,
       data: summedProfile,
       borderWidth: 2.4,
+      borderColor: '#059669',
       tension: 0.2,
       pointRadius: 0,
     });
@@ -555,6 +692,51 @@ function buildSpecificDayProfile(hourlyEntries, dayKey) {
 }
 
 function renderStats(dailyData, secondaryDailyData = null) {
+  // If there's a secondary dataset, compute aggregated stats (sum per day) across both azimuths
+  if (secondaryDailyData?.length) {
+    const mapByDay = new Map();
+
+    for (const row of dailyData) {
+      mapByDay.set(row.day, (mapByDay.get(row.day) || 0) + row.kwh);
+    }
+    for (const row of secondaryDailyData) {
+      mapByDay.set(row.day, (mapByDay.get(row.day) || 0) + row.kwh);
+    }
+
+    const combined = [...mapByDay.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([day, kwh]) => ({ day, kwh: Number(kwh.toFixed(3)) }));
+
+    const totalCombined = combined.reduce((acc, r) => acc + r.kwh, 0);
+    const avgCombined = totalCombined / combined.length;
+
+    const sortedCombined = [...combined].sort((a, b) => a.kwh - b.kwh);
+    const minCombined = sortedCombined[0];
+    const maxCombined = sortedCombined[sortedCombined.length - 1];
+
+    const cards = [
+      statCard('Total annuel (2 azimuts)', `${totalCombined.toFixed(1)} kWh`),
+      statCard('Moyenne/jour (2 azimuts)', `${avgCombined.toFixed(2)} kWh`),
+      statCard('Jour le plus faible (2 azimuts)', `${minCombined.day} · ${minCombined.kwh.toFixed(2)} kWh`),
+      statCard('Jour le plus productif (2 azimuts)', `${maxCombined.day} · ${maxCombined.kwh.toFixed(2)} kWh`),
+    ];
+
+    // Also include delta of annual totals for quick reference
+    const totalPrimary = dailyData.reduce((acc, r) => acc + r.kwh, 0);
+    const totalSecondary = secondaryDailyData.reduce((acc, r) => acc + r.kwh, 0);
+    const delta = totalSecondary - totalPrimary;
+    cards.push(
+      statCard(
+        `Écart annuel (azimut ${currentSecondaryAzimuth}° - ${currentPrimaryAzimuth}°)`,
+        `${delta >= 0 ? '+' : ''}${delta.toFixed(1)} kWh`
+      )
+    );
+
+    statsEl.innerHTML = cards.join('');
+    return;
+  }
+
+  // Fallback when only primary is available
   const total = dailyData.reduce((acc, row) => acc + row.kwh, 0);
   const avg = total / dailyData.length;
 
@@ -568,17 +750,6 @@ function renderStats(dailyData, secondaryDailyData = null) {
     statCard('Jour le plus faible', `${min.day} · ${min.kwh.toFixed(2)} kWh`),
     statCard('Jour le plus productif', `${max.day} · ${max.kwh.toFixed(2)} kWh`),
   ];
-
-  if (secondaryDailyData?.length) {
-    const total2 = secondaryDailyData.reduce((acc, row) => acc + row.kwh, 0);
-    const delta = total2 - total;
-    cards.push(
-      statCard(
-        `Écart annuel (azimut ${currentSecondaryAzimuth}° - ${currentPrimaryAzimuth}°)`,
-        `${delta >= 0 ? '+' : ''}${delta.toFixed(1)} kWh`
-      )
-    );
-  }
 
   statsEl.innerHTML = cards.join('');
 }
@@ -618,8 +789,8 @@ function initMap() {
     return;
   }
 
-  const defaultLat = Number(latInput.value) || 42.7;
-  const defaultLon = Number(lonInput.value) || 9.45;
+  const defaultLat = Number(latInput.value) || 46.5;
+  const defaultLon = Number(lonInput.value) || 2.5;
 
   map = L.map('map').setView([defaultLat, defaultLon], 8);
 
@@ -782,9 +953,11 @@ function clearSecondaryAzimuthArrow() {
 function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer, handleMarker) {
   // Calculs géométriques d'abord (évite l'utilisation de variables non initialisées)
   const bearing = azimuthSouthToAzimuthNorthClockwise(azimuthSouth);
-  const tip = destinationPoint(lat, lon, bearing, 220);
-  const leftHead = destinationPoint(tip.lat, tip.lon, bearing + 150, 70);
-  const rightHead = destinationPoint(tip.lat, tip.lon, bearing - 150, 70);
+  // Reduce arrow length/size by 60% (use scale 0.4)
+  const arrowScale = 0.4;
+  const tip = destinationPoint(lat, lon, bearing, 220 * arrowScale);
+  const leftHead = destinationPoint(tip.lat, tip.lon, bearing + 150, 70 * arrowScale);
+  const rightHead = destinationPoint(tip.lat, tip.lon, bearing - 150, 70 * arrowScale);
 
   // Crée le handle une seule fois et le réutilise
   let handleCreated = false;

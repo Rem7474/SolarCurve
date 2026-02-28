@@ -33,7 +33,7 @@
           </label>
 
           <label>
-            Puissance (kWc)
+            Puissance (Wc)
             <input id="peakPower" name="peakPower" type="number" step="0.1" min="0.1" value="1" required />
           </label>
 
@@ -50,7 +50,7 @@
 
           <label class="check-label">
             <input id="compareAzimuth" name="compareAzimuth" type="checkbox" />
-            Comparer avec un 2e azimut
+            Ajouter un 2e azimut
           </label>
 
           <label id="azimuth2-wrapper" class="hidden">
@@ -93,11 +93,38 @@
       <section class="card">
         <div id="status" class="status">Prêt.</div>
         <div id="stats" class="stats"></div>
+
+        <h2 class="chart-title">Profil mensuel moyen (heure par heure)</h2>
+        <div class="month-row">
+          <label for="monthSelect">Mois</label>
+          <select id="monthSelect">
+            <option value="1">Janvier</option>
+            <option value="2">Février</option>
+            <option value="3">Mars</option>
+            <option value="4">Avril</option>
+            <option value="5">Mai</option>
+            <option value="6" selected>Juin</option>
+            <option value="7">Juillet</option>
+            <option value="8">Août</option>
+            <option value="9">Septembre</option>
+            <option value="10">Octobre</option>
+            <option value="11">Novembre</option>
+            <option value="12">Décembre</option>
+          </select>
+        </div>
+        <div class="chart-container">
+          <canvas id="monthlyProfileChart"></canvas>
+        </div>
+
         <h2 class="chart-title">Profil journalier (heure par heure, 1 jour à la fois)</h2>
         <div class="slider-row">
           <label for="daySlider">Jour</label>
           <input id="daySlider" type="range" min="1" max="365" step="1" value="1" disabled />
           <span id="dayLabel">-</span>
+        </div>
+        <div class="day-arrow-row">
+          <button id="prevDay" class="small-btn" title="Jour précédent">◀</button>
+          <button id="nextDay" class="small-btn" title="Jour suivant">▶</button>
         </div>
         <div class="chart-container">
           <canvas id="dailyProfileChart"></canvas>
