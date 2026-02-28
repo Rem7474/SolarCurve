@@ -688,9 +688,13 @@ async function exportToPDF() {
     doc.text(inputs.join(' · '), margin + 4, y + 10);
     y += cardH + 8;
 
-    // Chart image
+    // Chart image - scale down if it would overflow the first page
     const imgWmm = pageW - margin * 2;
-    const imgHmm = (imgWmm * (canvasH / canvasW));
+    let imgHmm = (imgWmm * (canvasH / canvasW));
+    // compute remaining vertical space on page for stats and margin
+    const reservedForStats = 40; // space for stats text
+    const maxImgHmm = pageH - y - reservedForStats - margin;
+    if (imgHmm > maxImgHmm) imgHmm = Math.max(40, maxImgHmm);
     doc.addImage(imgData, 'PNG', margin, y, imgWmm, imgHmm);
     y += imgHmm + 8;
 
@@ -730,8 +734,8 @@ async function exportToPDF() {
     doc.setFillColor(14,165,233); // bluish header
     doc.setTextColor(255,255,255);
     const headerH = 8;
-    const headers = ['Mois', `Azimut ${currentPrimaryAzimuth}°`];
-    if (hasSecondary) headers.push(`Azimut ${currentSecondaryAzimuth}°`, 'Total');
+    const headers = ['Mois', `Production estimée (${currentPrimaryAzimuth}°) (kWh)`];
+    if (hasSecondary) headers.push(`Production estimée (${currentSecondaryAzimuth}°) (kWh)`, 'Total (kWh)');
     // draw header
     let xPos = colX;
     for (let i = 0; i < headers.length; i++) {
@@ -755,14 +759,14 @@ async function exportToPDF() {
       doc.text(mLabel, xPos + 3, y + 7);
       xPos += colW;
 
-      // Azimut 1
+      // Azimut 1 / Production estimée
       doc.rect(xPos, y, colW, rowH, 'S');
       doc.text(String(a1.toFixed(1)), xPos + 3, y + 7);
       xPos += colW;
 
       if (hasSecondary) {
         const a2 = (secondaryMonthly && secondaryMonthly[i]) ? secondaryMonthly[i] : 0;
-        // Azimut 2
+        // Azimut 2 / Production estimée
         doc.rect(xPos, y, colW, rowH, 'S');
         doc.text(String(a2.toFixed(1)), xPos + 3, y + 7);
         xPos += colW;
@@ -798,13 +802,9 @@ async function exportToPDF() {
       return buildMonthlyAverageProfile(hoursArray, month);
     }
 
-    const chartsPerPage = 4;
-    const chartCols = 2;
-    const chartRows = 2;
+    const chartCols = 3;
+    const chartRows = 4;
     const chartMargin = 8;
-    const chartWmm = (pageW - margin * 2 - chartMargin) / chartCols;
-    const chartHmm = 60; // fixed height for charts in mm
-
     const monthsToRender = 12;
     let chartImages = [];
 
@@ -855,17 +855,19 @@ async function exportToPDF() {
       chartImages.push({ month: m, src: im });
     }
 
-    // Draw chart images, 4 per page
+    // Draw all 12 charts on a single page in a 3x4 grid
+    doc.addPage();
+    const topSpace = margin + 8;
+    const availableW = pageW - margin * 2 - chartMargin * (chartCols - 1);
+    const availableH = pageH - topSpace - margin - 18; // leave bottom margin for footer
+    const chartWmm = availableW / chartCols;
+    const chartHmm = availableH / chartRows - 8; // small vertical padding
+
     for (let idx = 0; idx < chartImages.length; idx++) {
-      if (idx % chartsPerPage === 0) {
-        doc.addPage();
-        y = margin;
-      }
-      const pageIndex = idx % chartsPerPage;
-      const col = pageIndex % chartCols;
-      const row = Math.floor(pageIndex / chartCols);
+      const col = idx % chartCols;
+      const row = Math.floor(idx / chartCols);
       const x = margin + col * (chartWmm + chartMargin);
-      const yPos = y + row * (chartHmm + chartMargin + 8);
+      const yPos = topSpace + row * (chartHmm + chartMargin + 8);
       // title
       doc.setFontSize(10);
       doc.setTextColor(15,23,42);
@@ -874,11 +876,7 @@ async function exportToPDF() {
       doc.text(title, x, yPos);
       // image below title
       const imgY = yPos + 4;
-      doc.addImage(chartImages[idx].src, 'PNG', x, imgY, chartWmm, chartHmm);
-      // if last in page, advance y to next page start
-      if (pageIndex === chartsPerPage - 1) {
-        // nothing
-      }
+      doc.addImage(chartImages[idx].src, 'PNG', x, imgY, chartWmm, chartHmm - 12);
     }
 
     // Footer note
