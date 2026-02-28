@@ -714,51 +714,80 @@ async function exportToPDF() {
     // Page break
     doc.addPage();
 
-    // Page 2 - Detailed monthly grid (3 columns x 4 rows)
+    // Page 2 - Detailed monthly table
     doc.setFillColor(15,23,42);
     doc.rect(0, 0, pageW, 22, 'F');
     doc.setTextColor(255,255,255);
     doc.setFontSize(14);
     doc.text('Détails mensuels', margin, 14);
-    // grid start Y
-    const gridY = 28;
+    y = 28;
 
+    const colX = margin;
     const hasSecondary = Boolean(secondaryMonthly);
-    const gridCols = 3;
-    const gridRows = 4;
-    const gap = 8;
-    const cellW = (pageW - margin * 2 - gap * (gridCols - 1)) / gridCols;
-    const cellH = (pageH - gridY - margin - gap * (gridRows - 1) - 18) / gridRows;
+    const colsCount = hasSecondary ? 4 : 2; // Mois, Az1, (Az2), (Total)
+    const colW = Math.min(70, Math.floor((pageW - margin * 2) / colsCount));
+    doc.setFontSize(10);
+    doc.setFillColor(14,165,233); // bluish header
+    doc.setTextColor(255,255,255);
+    const headerH = 8;
+    const headers = ['Mois', `Azimut ${currentPrimaryAzimuth}°`];
+    if (hasSecondary) headers.push(`Azimut ${currentSecondaryAzimuth}°`, 'Total');
+    // draw header
+    let xPos = colX;
+    for (let i = 0; i < headers.length; i++) {
+      doc.rect(xPos, y, colW, headerH, 'F');
+      doc.text(headers[i], xPos + 3, y + 6);
+      xPos += colW;
+    }
+    y += headerH + 4;
 
+    // rows for 12 months
+    const rowH = 10;
     doc.setFontSize(10);
     doc.setTextColor(15,23,42);
+    for (let i = 0; i < 12; i++) {
+      xPos = colX;
+      const mLabel = monthsLabels[i] || `Mois ${i+1}`;
+      const a1 = primaryMonthly[i] || 0;
 
-    for (let m = 0; m < 12; m++) {
-      const col = m % gridCols;
-      const row = Math.floor(m / gridCols);
-      const x = margin + col * (cellW + gap);
-      const yCell = gridY + row * (cellH + gap);
+      // Month
+      doc.rect(xPos, y, colW, rowH, 'S');
+      doc.text(mLabel, xPos + 3, y + 7);
+      xPos += colW;
 
-      // cell background and border
-      doc.setFillColor(249,250,251);
-      doc.setDrawColor(226,232,240);
-      doc.rect(x, yCell, cellW, cellH, 'FD');
+      // Azimut 1
+      doc.rect(xPos, y, colW, rowH, 'S');
+      doc.text(String(a1.toFixed(1)), xPos + 3, y + 7);
+      xPos += colW;
 
-      // Month title
-      doc.setFontSize(11);
-      doc.setTextColor(15,23,42);
-      const monthLabel = monthsLabels[m] || `Mois ${m+1}`;
-      doc.text(monthLabel, x + 6, yCell + 12);
-
-      // Values
-      doc.setFontSize(10);
-      const a1 = primaryMonthly[m] || 0;
-      doc.text(`Azimut ${currentPrimaryAzimuth}°: ${a1.toFixed(1)} kWh`, x + 6, yCell + 26);
       if (hasSecondary) {
-        const a2 = (secondaryMonthly && secondaryMonthly[m]) ? secondaryMonthly[m] : 0;
+        const a2 = (secondaryMonthly && secondaryMonthly[i]) ? secondaryMonthly[i] : 0;
+        // Azimut 2
+        doc.rect(xPos, y, colW, rowH, 'S');
+        doc.text(String(a2.toFixed(1)), xPos + 3, y + 7);
+        xPos += colW;
+
+        // Total
         const tot = Number((a1 + a2).toFixed(1));
-        doc.text(`Azimut ${currentSecondaryAzimuth}°: ${a2.toFixed(1)} kWh`, x + 6, yCell + 38);
-        doc.text(`Total: ${tot.toFixed(1)} kWh`, x + 6, yCell + 50);
+        doc.rect(xPos, y, colW, rowH, 'S');
+        doc.text(String(tot.toFixed(1)), xPos + 3, y + 7);
+      }
+
+      y += rowH + 4;
+      if (y > pageH - margin - 20) {
+        doc.addPage();
+        // redraw header on new page
+        y = margin + 4;
+        xPos = colX;
+        doc.setFillColor(14,165,233);
+        doc.setTextColor(255,255,255);
+        for (let h = 0; h < headers.length; h++) {
+          doc.rect(xPos, y, colW, headerH, 'F');
+          doc.text(headers[h], xPos + 3, y + 6);
+          xPos += colW;
+        }
+        y += headerH + 4;
+        doc.setTextColor(15,23,42);
       }
     }
 
