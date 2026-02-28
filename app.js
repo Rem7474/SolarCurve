@@ -220,55 +220,62 @@ function getInputs() {
     peakPower,
     tilt,
     azimuth,
-    compareAzimuth,
-    azimuth2,
-    losses,
-    source,
-    pvwattsKey,
-  };
-}
+    // rows for 12 months - compute row height so table fits on a single page
+    doc.setFontSize(10);
+    doc.setTextColor(15,23,42);
+    const footerReserve = 18;
+    const availableTableHeight = pageH - y - margin - footerReserve - 8; // space for footer and padding
+    const desiredRows = 12;
+    const rowSpacing = 3;
+    let rowH = Math.floor((availableTableHeight - (desiredRows - 1) * rowSpacing) / desiredRows);
+    if (rowH < 8) rowH = 8; // minimum readable row height
 
-async function fetchFromSource(params) {
-  return params.source === 'pvgis' ? fetchFromPVGIS(params) : fetchFromPVWatts(params);
-}
+    for (let i = 0; i < 12; i++) {
+      xPos = colX;
+      const mLabel = monthsLabels[i] || `Mois ${i+1}`;
+      const a1 = primaryMonthly[i] || 0;
 
-async function fetchFromPVGIS({ lat, lon, peakPower, tilt, azimuth, losses }) {
-  const startYear = 2020;
-  const endYear = 2020;
+      // Month
+      doc.rect(xPos, y, colW, rowH, 'S');
+      doc.text(mLabel, xPos + 3, y + rowH / 2 + 3);
+      xPos += colW;
 
-  const params = new URLSearchParams({
-    lat: String(lat),
-    lon: String(lon),
-    pvcalculation: '1',
-    peakpower: String(peakPower),
-    loss: String(losses),
-    angle: String(tilt),
-    aspect: String(azimuth),
-    outputformat: 'json',
-    startyear: String(startYear),
-    endyear: String(endYear),
-    pvtechchoice: 'crystSi',
-    mountingplace: 'free',
-  });
+      // Azimut 1 (right-aligned)
+      doc.rect(xPos, y, colW, rowH, 'S');
+      doc.text(String(a1.toFixed(1)), xPos + colW - 3, y + rowH / 2 + 3, { align: 'right' });
+      xPos += colW;
 
-  const response = await fetchJSONFromAPI(
-    `/api/pvgis?${params.toString()}`,
-    'PVGIS'
-  );
+      if (hasSecondary) {
+        const a2 = (secondaryMonthly && secondaryMonthly[i]) ? secondaryMonthly[i] : 0;
+        // Azimut 2 (right-aligned)
+        doc.rect(xPos, y, colW, rowH, 'S');
+        doc.text(String(a2.toFixed(1)), xPos + colW - 3, y + rowH / 2 + 3, { align: 'right' });
+        xPos += colW;
 
-  const data = await response.json();
-  const hourly = data?.outputs?.hourly;
+        // Total (right-aligned)
+        const tot = Number((a1 + a2).toFixed(1));
+        doc.rect(xPos, y, colW, rowH, 'S');
+        doc.text(String(tot.toFixed(1)), xPos + colW - 3, y + rowH / 2 + 3, { align: 'right' });
+      }
 
-  if (!Array.isArray(hourly) || hourly.length === 0) {
-    throw new Error('Réponse PVGIS invalide.');
-  }
-
-  const hourlyEntries = [];
-  let hasPowerColumn = false;
-
-  for (const row of hourly) {
-    const powerW = Number(row.P ?? row.p ?? row['Pdc'] ?? row['Pac']);
-    if (!Number.isNaN(powerW)) {
+      y += rowH + rowSpacing;
+      // If somehow overflow (shouldn't), add page and redraw header
+      if (y > pageH - margin - footerReserve) {
+        doc.addPage();
+        // header on new page
+        y = margin + 4;
+        xPos = colX;
+        doc.setFillColor(14,165,233);
+        doc.setTextColor(255,255,255);
+        for (let h = 0; h < headers.length; h++) {
+          doc.rect(xPos, y, colW, headerH, 'F');
+          doc.text(headers[h], xPos + 3, y + 6);
+          xPos += colW;
+        }
+        y += headerH + 4;
+        doc.setTextColor(15,23,42);
+      }
+    }
       hasPowerColumn = true;
     }
     if (Number.isNaN(powerW)) {
@@ -810,7 +817,9 @@ async function exportToPDF() {
 
     for (let m = 1; m <= monthsToRender; m++) {
       const pm = monthlyHourly(currentPrimaryHourlyEntries, m);
-      const sm = currentSecondaryHourlyEntries.length ? monthlyHourly(currentSecondaryHourlyEntries, m) : null;
+      const sm = (hasSecondary && currentSecondaryHourlyEntries && currentSecondaryHourlyEntries.length)
+        ? monthlyHourly(currentSecondaryHourlyEntries, m)
+        : null;
 
       // create canvas per chart
       const c = document.createElement('canvas');
@@ -827,6 +836,8 @@ async function exportToPDF() {
           backgroundColor: '#ef9a9a',
           fill: false,
           tension: 0.2,
+          pointRadius: 0,
+          borderWidth: 1.6,
         }
       ];
       if (sm) {
@@ -837,6 +848,8 @@ async function exportToPDF() {
           backgroundColor: '#9ec6ff',
           fill: false,
           tension: 0.2,
+          pointRadius: 0,
+          borderWidth: 1.6,
         });
       }
 
