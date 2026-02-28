@@ -724,15 +724,16 @@ async function exportToPDF() {
 
     // Table header
     const colX = margin;
-    const colW = 40;
+    const hasSecondary = Boolean(secondaryMonthly);
+    const colsCount = hasSecondary ? 4 : 2; // Mois, Az1, (Az2), (Total)
+    const colW = Math.min(60, Math.floor((pageW - margin * 2) / colsCount));
     doc.setFontSize(10);
     doc.setFillColor(14,165,233); // bluish header
     doc.setTextColor(255,255,255);
     const headerH = 8;
     const cols = ['Mois', `Azimut ${currentPrimaryAzimuth}°`];
-    if (secondaryMonthly) cols.push(`Azimut ${currentSecondaryAzimuth}°`);
-    cols.push('Total');
-    // compute x positions
+    if (hasSecondary) cols.push(`Azimut ${currentSecondaryAzimuth}°`, 'Total');
+    // compute x positions and draw header
     let xPos = colX;
     for (let i = 0; i < cols.length; i++) {
       doc.rect(xPos, y, colW, headerH, 'F');
@@ -741,33 +742,136 @@ async function exportToPDF() {
     }
     y += headerH + 2;
 
-    // Table rows
+    // Table header
     doc.setFontSize(10);
     doc.setTextColor(15,23,42);
     for (let i = 0; i < 12; i++) {
       xPos = colX;
       const m = monthsLabels[i];
       const a1 = primaryMonthly[i] || 0;
-      const a2 = secondaryMonthly ? (secondaryMonthly[i] || 0) : 0;
+    doc.setFillColor(14,165,233); // bluish header
       const tot = Number((a1 + a2).toFixed(1));
-      const rowH = 7;
+    const cols = ['Mois', `Azimut ${currentPrimaryAzimuth}°`];
+
+      // Mois
       doc.rect(xPos, y - 2, colW, rowH, 'S');
-      doc.text(m, xPos + 2, y + 3);
+    for (let i = 0; i < cols.length; i++) {
+      doc.rect(xPos, y, colW, headerH, 'F');
+      // draw header text with better vertical alignment
+      doc.setFontSize(10);
+      doc.setTextColor(255,255,255);
+      const textX = xPos + 4;
+      const textY = y + headerH - 2;
+      doc.text(cols[i], textX, textY);
       xPos += colW;
-      doc.rect(xPos, y - 2, colW, rowH, 'S');
+    }
       doc.text(String(a1.toFixed(1)), xPos + 2, y + 3);
       xPos += colW;
-      if (secondaryMonthly) {
+
+      if (hasSecondary) {
+        // Azimut 2
         doc.rect(xPos, y - 2, colW, rowH, 'S');
         doc.text(String(a2.toFixed(1)), xPos + 2, y + 3);
         xPos += colW;
+
+        // Total
+        doc.rect(xPos, y - 2, colW, rowH, 'S');
+        doc.text(String(tot.toFixed(1)), xPos + 2, y + 3);
       }
-      doc.rect(xPos, y - 2, colW, rowH, 'S');
-      doc.text(String(tot.toFixed(1)), xPos + 2, y + 3);
+
       y += rowH + 2;
       if (y > pageH - 30) {
         doc.addPage();
         y = margin;
+      }
+    }
+
+    // --- Additional pages: hourly monthly average charts (4 per page) ---
+    // Helper to compute hourly average for a month
+    function monthlyHourly(hoursArray, month) {
+      // reuse buildMonthlyAverageProfile but operate on current data arrays
+      return buildMonthlyAverageProfile(hoursArray, month);
+    }
+
+    const chartsPerPage = 4;
+    const chartCols = 2;
+    const chartRows = 2;
+    const chartMargin = 8;
+    const chartWmm = (pageW - margin * 2 - chartMargin) / chartCols;
+    const chartHmm = 60; // fixed height for charts in mm
+
+    const monthsToRender = 12;
+    let chartImages = [];
+
+    for (let m = 1; m <= monthsToRender; m++) {
+      const pm = monthlyHourly(currentPrimaryHourlyEntries, m);
+      const sm = currentSecondaryHourlyEntries.length ? monthlyHourly(currentSecondaryHourlyEntries, m) : null;
+
+      // create canvas per chart
+      const c = document.createElement('canvas');
+      c.width = 1200;
+      c.height = 600;
+      c.style.display = 'none';
+      document.body.appendChild(c);
+
+      const dsets = [
+        {
+          label: `Azimut ${currentPrimaryAzimuth}°`,
+          data: pm,
+          borderColor: '#ef4444',
+          backgroundColor: '#ef9a9a',
+          fill: false,
+          tension: 0.2,
+        }
+      ];
+      if (sm) {
+        dsets.push({
+          label: `Azimut ${currentSecondaryAzimuth}°`,
+          data: sm,
+          borderColor: '#2563eb',
+          backgroundColor: '#9ec6ff',
+          fill: false,
+          tension: 0.2,
+        });
+      }
+
+      const ch = new Chart(c.getContext('2d'), {
+        type: 'line',
+        data: { labels: Array.from({length:24},(_,h)=>`${h}h`), datasets: dsets },
+        options: { responsive:false, maintainAspectRatio:false, plugins:{ legend:{ display: false } }, scales:{ y:{ title:{ display:true, text:'kWh' } } } }
+      });
+
+      // allow rendering
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((r) => setTimeout(r, 200));
+      const im = c.toDataURL('image/png',1.0);
+      ch.destroy();
+      document.body.removeChild(c);
+      chartImages.push({ month: m, src: im });
+    }
+
+    // Draw chart images, 4 per page
+    for (let idx = 0; idx < chartImages.length; idx++) {
+      if (idx % chartsPerPage === 0) {
+        doc.addPage();
+        y = margin;
+      }
+      const pageIndex = idx % chartsPerPage;
+      const col = pageIndex % chartCols;
+      const row = Math.floor(pageIndex / chartCols);
+      const x = margin + col * (chartWmm + chartMargin);
+      const yPos = y + row * (chartHmm + chartMargin + 8);
+      // title
+      doc.setFontSize(10);
+      doc.setTextColor(15,23,42);
+      const title = `Mois ${chartImages[idx].month} - Profil horaire moyen`;
+      doc.text(title, x, yPos);
+      // image below title
+      const imgY = yPos + 4;
+      doc.addImage(chartImages[idx].src, 'PNG', x, imgY, chartWmm, chartHmm);
+      // if last in page, advance y to next page start
+      if (pageIndex === chartsPerPage - 1) {
+        // nothing
       }
     }
 
