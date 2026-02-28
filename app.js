@@ -602,14 +602,16 @@ async function exportToPDF() {
       ? computeMonthlyTotalsFromDaily(currentSecondaryDailyData)
       : null;
 
-    // Create offscreen canvas for chart
+    const monthsLabels = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+
+    // Create offscreen canvas for chart (higher resolution)
     const canvas = document.createElement('canvas');
-    canvas.width = 1200;
-    canvas.height = 600;
+    const canvasW = 1600;
+    const canvasH = 800;
+    canvas.width = canvasW;
+    canvas.height = canvasH;
     canvas.style.display = 'none';
     document.body.appendChild(canvas);
-
-    const monthsLabels = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
 
     const datasets = [
       {
@@ -620,7 +622,6 @@ async function exportToPDF() {
         borderWidth: 1
       }
     ];
-
     if (secondaryMonthly) {
       datasets.push({
         label: `Azimut ${currentSecondaryAzimuth}°`,
@@ -633,42 +634,45 @@ async function exportToPDF() {
 
     const tmpChart = new Chart(canvas.getContext('2d'), {
       type: 'bar',
-      data: {
-        labels: monthsLabels,
-        datasets,
-      },
+      data: { labels: monthsLabels, datasets },
       options: {
         responsive: false,
         maintainAspectRatio: false,
-        plugins: { legend: { display: true } },
-        scales: {
-          y: { title: { display: true, text: 'kWh' } }
-        }
+        plugins: { legend: { display: true, position: 'top' } },
+        scales: { y: { title: { display: true, text: 'kWh' } } }
       }
     });
 
-    // wait a tick to ensure rendering
-    await new Promise((r) => setTimeout(r, 250));
+    await new Promise((r) => setTimeout(r, 300));
     const imgData = canvas.toDataURL('image/png', 1.0);
     tmpChart.destroy();
     document.body.removeChild(canvas);
 
-    // Prepare PDF
+    // Prepare PDF (A4 landscape)
     const { jspdf } = window.jspdf || { jspdf: window.jspdf };
     const doc = new jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-
     const pageW = doc.internal.pageSize.getWidth();
-    let cursorY = 12;
+    const pageH = doc.internal.pageSize.getHeight();
+    const margin = 14;
+    let y = margin;
 
+    // Header block
+    doc.setFillColor(15,23,42); // #0f172a
+    doc.rect(0, 0, pageW, 28, 'F');
+    doc.setTextColor(255,255,255);
     doc.setFontSize(18);
-    doc.text('Récapitulatif SolarCurve', 14, cursorY);
-    cursorY += 8;
+    doc.text('Récapitulatif SolarCurve', margin, 18);
+    doc.setFontSize(10);
+    doc.text(`Export : ${new Date().toLocaleString()}`, pageW - margin, 18, { align: 'right' });
+    y = 34;
 
-    doc.setFontSize(11);
-    doc.text(`Date export : ${new Date().toLocaleString()}`, 14, cursorY);
-    cursorY += 8;
-
-    // Inputs summary
+    // Inputs card
+    doc.setFillColor(243,244,246); // light gray
+    doc.setDrawColor(226,232,240);
+    const cardH = 16;
+    doc.rect(margin, y, pageW - margin * 2, cardH, 'FD');
+    doc.setTextColor(15,23,42);
+    doc.setFontSize(10);
     const inputs = [];
     inputs.push(`Position: ${latInput.value || '-'} , ${lonInput.value || '-'}`);
     inputs.push(`Puissance (Wc): ${document.getElementById('peakPower').value} W`);
@@ -676,75 +680,97 @@ async function exportToPDF() {
     inputs.push(`Azimut 1: ${currentPrimaryAzimuth ?? document.getElementById('azimuth').value}°`);
     if (currentSecondaryAzimuth !== null) inputs.push(`Azimut 2: ${currentSecondaryAzimuth}°`);
     inputs.push(`Pertes: ${document.getElementById('losses').value} %`);
+    doc.text(inputs.join(' · '), margin + 4, y + 10);
+    y += cardH + 8;
 
-    doc.text(inputs.join(' · '), 14, cursorY);
-    cursorY += 10;
+    // Chart image
+    const imgWmm = pageW - margin * 2;
+    const imgHmm = (imgWmm * (canvasH / canvasW));
+    doc.addImage(imgData, 'PNG', margin, y, imgWmm, imgHmm);
+    y += imgHmm + 8;
 
-    // Insert chart image
-    const imgWmm = pageW - 28; // margins
-    const imgHmm = (imgWmm * 600) / 1200; // maintain ratio
-    doc.addImage(imgData, 'PNG', 14, cursorY, imgWmm, imgHmm);
-    cursorY += imgHmm + 6;
+    // Summary stats under chart
+    const totalYearPrimary = primaryMonthly.reduce((a,b) => a + b, 0);
+    const totalYearSecondary = secondaryMonthly ? secondaryMonthly.reduce((a,b) => a + b, 0) : 0;
+    const totalCombined = totalYearPrimary + totalYearSecondary;
+    doc.setFontSize(11);
+    doc.text(`Total annuel Azimut ${currentPrimaryAzimuth}°: ${totalYearPrimary.toFixed(1)} kWh`, margin, y);
+    y += 6;
+    if (secondaryMonthly) {
+      doc.text(`Total annuel Azimut ${currentSecondaryAzimuth}°: ${totalYearSecondary.toFixed(1)} kWh`, margin, y);
+      y += 6;
+      const pct1 = totalCombined > 0 ? (totalYearPrimary / totalCombined) * 100 : 0;
+      const pct2 = totalCombined > 0 ? (totalYearSecondary / totalCombined) * 100 : 0;
+      doc.text(`% production ${currentPrimaryAzimuth}°: ${pct1.toFixed(1)} %`, margin, y);
+      doc.text(`% production ${currentSecondaryAzimuth}°: ${pct2.toFixed(1)} %`, pageW - margin - 60, y);
+      y += 8;
+    }
 
-    // Add monthly totals table summary
-    doc.setFontSize(12);
-    doc.text('Production mensuelle (kWh)', 14, cursorY);
-    cursorY += 6;
+    // Page break
+    doc.addPage();
 
-    // Compute combined monthly totals for table
-    const combinedMonthly = primaryMonthly.map((v, i) => {
-      const sec = secondaryMonthly ? secondaryMonthly[i] : 0;
-      return Number((v + sec).toFixed(3));
-    });
+    // Page 2 - Detailed monthly table
+    doc.setFillColor(15,23,42);
+    doc.rect(0, 0, pageW, 22, 'F');
+    doc.setTextColor(255,255,255);
+    doc.setFontSize(14);
+    doc.text('Détails mensuels', margin, 14);
+    y = 28;
 
-    // Table columns: Mois | Az1 | Az2 (opt) | Total
-    const colX = 14;
+    // Table header
+    const colX = margin;
     const colW = 40;
     doc.setFontSize(10);
-    const headerY = cursorY;
-    doc.text('Mois', colX, cursorY);
-    doc.text(`Azimut ${currentPrimaryAzimuth}°`, colX + colW, cursorY);
-    if (secondaryMonthly) doc.text(`Azimut ${currentSecondaryAzimuth}°`, colX + colW * 2, cursorY);
-    doc.text('Total', colX + colW * (secondaryMonthly ? 3 : 2), cursorY);
-    cursorY += 5;
+    doc.setFillColor(14,165,233); // bluish header
+    doc.setTextColor(255,255,255);
+    const headerH = 8;
+    const cols = ['Mois', `Azimut ${currentPrimaryAzimuth}°`];
+    if (secondaryMonthly) cols.push(`Azimut ${currentSecondaryAzimuth}°`);
+    cols.push('Total');
+    // compute x positions
+    let xPos = colX;
+    for (let i = 0; i < cols.length; i++) {
+      doc.rect(xPos, y, colW, headerH, 'F');
+      doc.text(cols[i], xPos + 2, y + 6);
+      xPos += colW;
+    }
+    y += headerH + 2;
 
-    for (let i = 0; i < 12; i += 1) {
-      doc.text(monthsLabels[i], colX, cursorY);
-      doc.text(String(primaryMonthly[i].toFixed(1)), colX + colW, cursorY);
-      if (secondaryMonthly) doc.text(String(secondaryMonthly[i].toFixed(1)), colX + colW * 2, cursorY);
-      doc.text(String(combinedMonthly[i].toFixed(1)), colX + colW * (secondaryMonthly ? 3 : 2), cursorY);
-      cursorY += 5;
-      if (cursorY > 195) {
+    // Table rows
+    doc.setFontSize(10);
+    doc.setTextColor(15,23,42);
+    for (let i = 0; i < 12; i++) {
+      xPos = colX;
+      const m = monthsLabels[i];
+      const a1 = primaryMonthly[i] || 0;
+      const a2 = secondaryMonthly ? (secondaryMonthly[i] || 0) : 0;
+      const tot = Number((a1 + a2).toFixed(1));
+      const rowH = 7;
+      doc.rect(xPos, y - 2, colW, rowH, 'S');
+      doc.text(m, xPos + 2, y + 3);
+      xPos += colW;
+      doc.rect(xPos, y - 2, colW, rowH, 'S');
+      doc.text(String(a1.toFixed(1)), xPos + 2, y + 3);
+      xPos += colW;
+      if (secondaryMonthly) {
+        doc.rect(xPos, y - 2, colW, rowH, 'S');
+        doc.text(String(a2.toFixed(1)), xPos + 2, y + 3);
+        xPos += colW;
+      }
+      doc.rect(xPos, y - 2, colW, rowH, 'S');
+      doc.text(String(tot.toFixed(1)), xPos + 2, y + 3);
+      y += rowH + 2;
+      if (y > pageH - 30) {
         doc.addPage();
-        cursorY = 14;
+        y = margin;
       }
     }
 
-    // Overall stats
-    cursorY += 6;
-    const totalYearPrimary = primaryMonthly.reduce((a,b) => a+b, 0);
-    const totalYearSecondary = secondaryMonthly ? secondaryMonthly.reduce((a,b)=>a+b,0) : 0;
-    const totalYearCombined = totalYearPrimary + totalYearSecondary;
-    doc.setFontSize(11);
-    doc.text(`Total annuel Azimut ${currentPrimaryAzimuth}°: ${totalYearPrimary.toFixed(1)} kWh`, 14, cursorY);
-    cursorY += 6;
-    if (secondaryMonthly) {
-      doc.text(`Total annuel Azimut ${currentSecondaryAzimuth}°: ${totalYearSecondary.toFixed(1)} kWh`, 14, cursorY);
-      cursorY += 6;
-      const pct1 = totalYearCombined > 0 ? (totalYearPrimary / totalYearCombined) * 100 : 0;
-      const pct2 = totalYearCombined > 0 ? (totalYearSecondary / totalYearCombined) * 100 : 0;
-      doc.text(`% production Azimut ${currentPrimaryAzimuth}°: ${pct1.toFixed(1)} %`, 14, cursorY);
-      cursorY += 6;
-      doc.text(`% production Azimut ${currentSecondaryAzimuth}°: ${pct2.toFixed(1)} %`, 14, cursorY);
-      cursorY += 6;
-    }
-
-    // Footer / styling note
-    cursorY += 6;
+    // Footer note
     doc.setFontSize(9);
-    doc.text('Généré par SolarCurve — présentation optimisée pour impression', 14, cursorY);
+    doc.setTextColor(120,120,120);
+    doc.text('Export généré par SolarCurve — données fournies à titre indicatif', margin, pageH - 10);
 
-    // Save PDF
     const filename = `SolarCurve_recap_${new Date().toISOString().slice(0,10)}.pdf`;
     doc.save(filename);
   } catch (err) {
@@ -966,6 +992,8 @@ function hideResults() {
     if (mrow) mrow.classList.add('hidden');
     if (srow) srow.classList.add('hidden');
     if (darrow) darrow.classList.add('hidden');
+    const exportArea = document.getElementById('exportArea');
+    if (exportArea) exportArea.classList.add('hidden');
   } catch {}
 }
 
@@ -984,6 +1012,8 @@ function showResults() {
     if (mrow) mrow.classList.remove('hidden');
     if (srow) srow.classList.remove('hidden');
     if (darrow) darrow.classList.remove('hidden');
+    const exportArea = document.getElementById('exportArea');
+    if (exportArea) exportArea.classList.remove('hidden');
   } catch {}
 }
 

@@ -157,6 +157,12 @@ button:disabled {
   border: 1px solid #cbd5e1;
   background: #fff;
   cursor: pointer;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #111827;
+  font-size: 14px;
 }
 
 .small-btn:disabled {
@@ -169,6 +175,13 @@ button:disabled {
   color: #fff;
   border: none;
   padding: 8px 12px;
+}
+
+.small-btn svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+  color: inherit;
 }
 
 .chart-container canvas {
