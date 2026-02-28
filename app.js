@@ -724,15 +724,15 @@ function renderStats(dailyData, secondaryDailyData = null) {
       statCard('Jour le plus productif (2 azimuts)', `${maxCombined.day} · ${maxCombined.kwh.toFixed(2)} kWh`),
     ];
 
-    // Also include delta of annual totals for quick reference
+    // Show percentage contribution of each azimuth to the combined production
     const totalPrimary = dailyData.reduce((acc, r) => acc + r.kwh, 0);
     const totalSecondary = secondaryDailyData.reduce((acc, r) => acc + r.kwh, 0);
-    const delta = totalSecondary - totalPrimary;
+    const totalCombined = totalPrimary + totalSecondary;
+    const pctPrimary = totalCombined > 0 ? (totalPrimary / totalCombined) * 100 : 0;
+    const pctSecondary = totalCombined > 0 ? (totalSecondary / totalCombined) * 100 : 0;
     cards.push(
-      statCard(
-        `Écart annuel (azimut ${currentSecondaryAzimuth}° - ${currentPrimaryAzimuth}°)`,
-        `${delta >= 0 ? '+' : ''}${delta.toFixed(1)} kWh`
-      )
+      statCard(`% production azimut ${currentPrimaryAzimuth}°`, `${pctPrimary.toFixed(1)} %`),
+      statCard(`% production azimut ${currentSecondaryAzimuth}°`, `${pctSecondary.toFixed(1)} %`)
     );
 
     statsEl.innerHTML = cards.join('');
