@@ -727,9 +727,9 @@ function renderStats(dailyData, secondaryDailyData = null) {
     // Show percentage contribution of each azimuth to the combined production
     const totalPrimary = dailyData.reduce((acc, r) => acc + r.kwh, 0);
     const totalSecondary = secondaryDailyData.reduce((acc, r) => acc + r.kwh, 0);
-    const totalCombined = totalPrimary + totalSecondary;
-    const pctPrimary = totalCombined > 0 ? (totalPrimary / totalCombined) * 100 : 0;
-    const pctSecondary = totalCombined > 0 ? (totalSecondary / totalCombined) * 100 : 0;
+    const totalBothAzimuts = totalPrimary + totalSecondary;
+    const pctPrimary = totalBothAzimuts > 0 ? (totalPrimary / totalBothAzimuts) * 100 : 0;
+    const pctSecondary = totalBothAzimuts > 0 ? (totalSecondary / totalBothAzimuts) * 100 : 0;
     cards.push(
       statCard(`% production azimut ${currentPrimaryAzimuth}°`, `${pctPrimary.toFixed(1)} %`),
       statCard(`% production azimut ${currentSecondaryAzimuth}°`, `${pctSecondary.toFixed(1)} %`)
