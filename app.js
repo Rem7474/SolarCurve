@@ -649,8 +649,13 @@ async function exportToPDF() {
     document.body.removeChild(canvas);
 
     // Prepare PDF (A4 landscape)
-    const { jspdf } = window.jspdf || { jspdf: window.jspdf };
-    const doc = new jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    // Support different UMD/global shapes for jsPDF
+    const jsPDFGlobal = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF || (window.jspdf || null);
+    if (!jsPDFGlobal) {
+      throw new Error('jsPDF library not found. Ensure jspdf.umd.min.js is loaded.');
+    }
+    const DocConstructor = typeof jsPDFGlobal === 'function' ? jsPDFGlobal : jsPDFGlobal.jsPDF || jsPDFGlobal;
+    const doc = new DocConstructor({ orientation: 'landscape', unit: 'mm', format: 'a4' });
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
     const margin = 14;
