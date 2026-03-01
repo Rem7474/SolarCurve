@@ -30,10 +30,14 @@ const loadingOverlay = document.getElementById('loadingOverlay');
 const sidebarToggle = document.getElementById('sidebar-toggle');
 const sidebarEl = document.getElementById('sidebar');
 const sidebarOverlay = document.getElementById('sidebarOverlay');
+const peakShavingSection = document.getElementById('peakShavingSection');
+const peakShavingStatsEl = document.getElementById('peakShavingStats');
+const peakShavingChartCanvas = document.getElementById('peakShavingChart');
 
 // ─── State ─────────────────────────────────────────────────
 let dailyProfileChart;
 let monthlyProfileChart;
+let peakShavingChart;
 let currentPrimaryHourlyEntries = [];
 let currentPrimaryDailyData = [];
 let currentSecondaryHourlyEntries = [];
@@ -193,6 +197,7 @@ form.addEventListener('submit', async (event) => {
     daySlider.value = '1';
     updateSelectedDayChart();
     updateMonthlyChart();
+    updatePeakShavingDisplay();
     updateDayButtonsState();
     showResults();
     setStatus(`Estimation terminée (${params.source.toUpperCase()}).`, 'success');
@@ -722,7 +727,98 @@ function statCard(title, value) {
   return `<div class="stat-item"><strong>${title}</strong><span class="stat-value">${value}</span></div>`;
 }
 
-// ─── UI Helpers ────────────────────────────────────────────
+// ─── Peak Shaving / Demand Response ────────────────────────
+function updatePeakShavingDisplay() {
+  const consumptionPower = Number(document.getElementById('consumptionPower').value);
+  if (!consumptionPower || consumptionPower <= 0) {
+    peakShavingSection.classList.add('hidden');
+    return;
+  }
+
+  peakShavingSection.classList.remove('hidden');
+
+  // Combine hourly data from both azimuths if available
+  const hourlyData = [...currentPrimaryHourlyEntries];
+  if (currentSecondaryHourlyEntries.length) {
+    const map = new Map();
+    for (const e of hourlyData) {
+      const key = `${e.dayKey}:${e.hour}`;
+      map.set(key, (map.get(key) ?? 0) + e.kwh);
+    }
+    for (const e of currentSecondaryHourlyEntries) {
+      const key = `${e.dayKey}:${e.hour}`;
+      map.set(key, (map.get(key) ?? 0) + e.kwh);
+    }
+    // Rebuild hourly array from map
+    hourlyData.length = 0;
+    for (const [key, kwh] of map) {
+      const [dayKey, hour] = key.split(':');
+      const month = Number(dayKey.split('-')[1]);
+      hourlyData.push({ dayKey, month, hour: Number(hour), kwh });
+    }
+  }
+
+  // Calculate monthly peak shaving (production used to offset consumption)
+  const shavingByMonth = Array.from({ length: 12 }, () => 0);
+  for (const e of hourlyData) {
+    const hourlyConsumption = consumptionPower; // kW
+    const hourlyProduction = e.kwh; // already in kWh per hour, so equals kW for hourly rate
+    const shaved = Math.min(hourlyProduction, hourlyConsumption);
+    shavingByMonth[e.month - 1] += shaved;
+  }
+
+  // Compute remaining consumption (not offset by production)
+  const remainingByMonth = Array.from({ length: 12 }, () => 0);
+  for (let m = 0; m < 12; m++) {
+    const daysInMonth = [31, 28.25, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m];
+    const totalConsumption = consumptionPower * 24 * daysInMonth;
+    remainingByMonth[m] = Math.max(0, totalConsumption - shavingByMonth[m]);
+  }
+
+  const totalShaved = shavingByMonth.reduce((a, b) => a + b, 0);
+  const totalConsumption = consumptionPower * 24 * 365.25;
+  const shavingPct = totalConsumption > 0 ? (totalShaved / totalConsumption * 100) : 0;
+
+  peakShavingStatsEl.innerHTML = [
+    statCard('Effacement total annuel', `${totalShaved.toFixed(1)} kWh`),
+    statCard('Taux de réduction', `${shavingPct.toFixed(1)} %`),
+    statCard('Consommation restante', `${(totalConsumption - totalShaved).toFixed(1)} kWh`),
+  ].join('');
+
+  // Render stacked bar chart for monthly peak shaving
+  renderPeakShavingChart(shavingByMonth, remainingByMonth);
+}
+
+function renderPeakShavingChart(shavingByMonth, remainingByMonth) {
+  if (!peakShavingChartCanvas) return;
+
+  if (peakShavingChart) peakShavingChart.destroy();
+
+  const MONTHS_SHORT = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+
+  peakShavingChart = new Chart(peakShavingChartCanvas, {
+    type: 'bar',
+    data: {
+      labels: MONTHS_SHORT,
+      datasets: [
+        { label: 'Effacement ', data: shavingByMonth, backgroundColor: '#059669', borderRadius: 0 },
+        { label: 'Consommation restante', data: remainingByMonth, backgroundColor: '#cbd5e1', borderRadius: 0 },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      indexAxis: undefined,
+      plugins: {
+        legend: { display: true, position: 'top', labels: { font: { size: 13 }, padding: 14 } },
+      },
+      scales: {
+        x: { stacked: true, grid: { display: false }, ticks: { font: { size: 12 } } },
+        y: { stacked: true, title: { display: true, text: 'kWh', font: { size: 12 } }, grid: { color: 'rgba(0,0,0,.06)' }, ticks: { font: { size: 11 } } },
+      },
+    },
+  });
+}
 function setStatus(message, type = '') {
   if (statusTextEl) statusTextEl.textContent = message;
   statusEl.classList.remove('is-error', 'is-success');
@@ -1007,8 +1103,8 @@ async function exportToPDF() {
         maintainAspectRatio: false,
         plugins: { legend: { display: true, position: 'top', labels: { font: { size: 14 }, padding: 14 } } },
         scales: {
-          x: { grid: { display: false }, ticks: { font: { size: 12 } } },
-          y: { title: { display: true, text: 'kWh', font: { size: 12 } }, grid: { color: 'rgba(0,0,0,.06)' }, ticks: { font: { size: 11 } } },
+          x: { stacked: hasSecondary, grid: { display: false }, ticks: { font: { size: 12 } } },
+          y: { stacked: hasSecondary, title: { display: true, text: 'kWh', font: { size: 12 } }, grid: { color: 'rgba(0,0,0,.06)' }, ticks: { font: { size: 11 } } },
         },
       },
     });
