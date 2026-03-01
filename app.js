@@ -908,7 +908,7 @@ function initMap() {
   const defaultLat = Number(latInput.value) || 46.5;
   const defaultLon = Number(lonInput.value) || 2.5;
 
-  map = L.map('map').setView([defaultLat, defaultLon], 16);
+  map = L.map('map').setView([defaultLat, defaultLon], 12);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
@@ -1232,8 +1232,8 @@ async function exportToPDF() {
     if (map && document.getElementById('map')) {
       try {
         const originalZoom = map.getZoom();
-        map.setZoom(19);
-        await new Promise(resolve => setTimeout(resolve, 800));
+        map.setZoom(17);
+        await new Promise(resolve => setTimeout(resolve, 1500));
         const canvas = await html2canvas(document.getElementById('map'), { scale: 2, useCORS: true, logging: false });
         mapImg = canvas.toDataURL('image/png', 0.95);
         map.setZoom(originalZoom);
