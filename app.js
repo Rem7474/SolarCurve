@@ -1,9 +1,15 @@
+/* ============================================================
+   SolarCurve — Application Logic
+   ============================================================ */
+
+// ─── DOM References ────────────────────────────────────────
 const form = document.getElementById('pv-form');
 const sourceSelect = document.getElementById('source');
 const pvwattsKeyWrapper = document.getElementById('pvwatts-key-wrapper');
 const geoBtn = document.getElementById('geo-btn');
 const estimateBtn = document.getElementById('estimate-btn');
 const statusEl = document.getElementById('status');
+const statusTextEl = document.getElementById('statusText');
 const statsEl = document.getElementById('stats');
 const dailyProfileChartCanvas = document.getElementById('dailyProfileChart');
 const monthlyProfileChartCanvas = document.getElementById('monthlyProfileChart');
@@ -19,7 +25,13 @@ const compareAzimuthCheckbox = document.getElementById('compareAzimuth');
 const azimuth2Wrapper = document.getElementById('azimuth2-wrapper');
 const azimuth2Input = document.getElementById('azimuth2');
 const mapHintEl = document.getElementById('mapHint');
+const exportPdfBtn = document.getElementById('exportPdfBtn');
+const loadingOverlay = document.getElementById('loadingOverlay');
+const sidebarToggle = document.getElementById('sidebar-toggle');
+const sidebarEl = document.getElementById('sidebar');
+const sidebarOverlay = document.getElementById('sidebarOverlay');
 
+// ─── State ─────────────────────────────────────────────────
 let dailyProfileChart;
 let monthlyProfileChart;
 let currentPrimaryHourlyEntries = [];
@@ -37,8 +49,22 @@ let azimuthSecondaryHead;
 let azimuthHandle = null;
 let azimuthSecondaryHandle = null;
 let suppressMapClick = false;
-const exportPdfBtn = document.getElementById('exportPdfBtn');
 
+// ─── Sidebar Toggle (mobile) ──────────────────────────────
+if (sidebarToggle && sidebarEl) {
+  sidebarToggle.addEventListener('click', () => {
+    sidebarEl.classList.toggle('open');
+    sidebarOverlay.classList.toggle('active');
+  });
+}
+if (sidebarOverlay) {
+  sidebarOverlay.addEventListener('click', () => {
+    sidebarEl.classList.remove('open');
+    sidebarOverlay.classList.remove('active');
+  });
+}
+
+// ─── Event Listeners ───────────────────────────────────────
 sourceSelect.addEventListener('change', () => {
   pvwattsKeyWrapper.classList.toggle('hidden', sourceSelect.value !== 'pvwatts');
 });
@@ -47,9 +73,7 @@ compareAzimuthCheckbox.addEventListener('change', () => {
   const enabled = compareAzimuthCheckbox.checked;
   azimuth2Wrapper.classList.toggle('hidden', !enabled);
   azimuth2Input.disabled = !enabled;
-  if (enabled) {
-    setAutoOppositeAzimuth(true);
-  }
+  if (enabled) setAutoOppositeAzimuth(true);
   updateAzimuthArrowFromInputs();
 });
 
@@ -59,18 +83,11 @@ daySlider.addEventListener('input', () => {
 });
 
 if (monthSelect) {
-  monthSelect.addEventListener('change', () => {
-    updateMonthlyChart();
-  });
+  monthSelect.addEventListener('change', () => updateMonthlyChart());
 }
 
-latInput.addEventListener('change', () => {
-  updateMapFromInputs();
-});
-
-lonInput.addEventListener('change', () => {
-  updateMapFromInputs();
-});
+latInput.addEventListener('change', () => updateMapFromInputs());
+lonInput.addEventListener('change', () => updateMapFromInputs());
 
 azimuthInput.addEventListener('input', () => {
   setAutoOppositeAzimuth();
@@ -84,55 +101,76 @@ azimuth2Input.addEventListener('input', () => {
 
 geoBtn.addEventListener('click', () => {
   if (!navigator.geolocation) {
-    setStatus('Géolocalisation non supportée par ce navigateur.', true);
+    setStatus('Géolocalisation non supportée par ce navigateur.', 'error');
     return;
   }
-
-  setStatus('Récupération de votre position GPS...');
+  setStatus('Récupération de votre position GPS…');
   navigator.geolocation.getCurrentPosition(
     (position) => {
       latInput.value = position.coords.latitude.toFixed(5);
       lonInput.value = position.coords.longitude.toFixed(5);
       updateMapFromInputs(true);
-      setStatus('Position GPS récupérée.');
+      setStatus('Position GPS récupérée.', 'success');
     },
     (error) => {
-      setStatus(`Impossible de récupérer la position (${error.message}).`, true);
+      setStatus(`Impossible de récupérer la position (${error.message}).`, 'error');
     },
     { enableHighAccuracy: true, timeout: 10000 }
   );
 });
 
+if (prevDayBtn) {
+  prevDayBtn.addEventListener('click', () => {
+    if (!daySlider || daySlider.disabled) return;
+    let v = Number(daySlider.value || 1);
+    if (v > Number(daySlider.min || 1)) v -= 1;
+    daySlider.value = String(v);
+    updateSelectedDayChart();
+    updateDayButtonsState();
+  });
+}
+
+if (nextDayBtn) {
+  nextDayBtn.addEventListener('click', () => {
+    if (!daySlider || daySlider.disabled) return;
+    let v = Number(daySlider.value || 1);
+    if (v < Number(daySlider.max || 1)) v += 1;
+    daySlider.value = String(v);
+    updateSelectedDayChart();
+    updateDayButtonsState();
+  });
+}
+
+if (exportPdfBtn) {
+  exportPdfBtn.addEventListener('click', () => exportToPDF());
+}
+
+// ─── Form Submit ───────────────────────────────────────────
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
 
   const params = getInputs();
-  if (!params) {
-    return;
-  }
+  if (!params) return;
 
-  // hide previous outputs while computing
+  // Close sidebar on mobile
+  if (sidebarEl) sidebarEl.classList.remove('open');
+  if (sidebarOverlay) sidebarOverlay.classList.remove('active');
+
   hideResults();
   toggleLoading(true);
-  setStatus('Calcul en cours...');
+  setStatus('Calcul en cours…');
 
   try {
     const primaryResult = await fetchFromSource(params);
 
     let secondaryResult = null;
     if (params.compareAzimuth) {
-      secondaryResult = await fetchFromSource({
-        ...params,
-        azimuth: params.azimuth2,
-      });
+      secondaryResult = await fetchFromSource({ ...params, azimuth: params.azimuth2 });
     }
 
     const { dailyData, hourlyEntries } = primaryResult;
 
-    if (!dailyData.length) {
-      throw new Error('Aucune donnée de production reçue.');
-    }
-
+    if (!dailyData.length) throw new Error('Aucune donnée de production reçue.');
     if (secondaryResult && !secondaryResult.dailyData.length) {
       throw new Error('Aucune donnée de production reçue pour le 2e azimut.');
     }
@@ -157,15 +195,16 @@ form.addEventListener('submit', async (event) => {
     updateMonthlyChart();
     updateDayButtonsState();
     showResults();
-    setStatus(`Estimation terminée (${params.source.toUpperCase()}).`);
+    setStatus(`Estimation terminée (${params.source.toUpperCase()}).`, 'success');
   } catch (error) {
     console.error(error);
-    setStatus(`Erreur: ${error.message}`, true);
+    setStatus(`Erreur : ${error.message}`, 'error');
   } finally {
     toggleLoading(false);
   }
 });
 
+// ─── Input Parsing ─────────────────────────────────────────
 function parseDecimal(val) {
   return Number(String(val).replace(',', '.'));
 }
@@ -173,9 +212,8 @@ function parseDecimal(val) {
 function getInputs() {
   const lat = parseDecimal(latInput.value);
   const lon = parseDecimal(lonInput.value);
-  // Input is expressed in Wc (Watts-peak). Convert to kW for API calls.
   const peakPowerInputW = Number(document.getElementById('peakPower').value);
-  const peakPower = peakPowerInputW / 1000; // kW
+  const peakPower = peakPowerInputW / 1000; // kWp for API
   const tilt = Number(document.getElementById('tilt').value);
   const azimuth = Number(document.getElementById('azimuth').value);
   const compareAzimuth = compareAzimuthCheckbox.checked;
@@ -184,108 +222,70 @@ function getInputs() {
   const source = sourceSelect.value;
   const pvwattsKey = document.getElementById('pvwattsKey').value.trim();
 
-  if ([lat, lon, peakPowerInputW, tilt, azimuth, losses].some((value) => Number.isNaN(value))) {
-    setStatus('Merci de renseigner des valeurs numériques valides.', true);
+  if ([lat, lon, peakPowerInputW, tilt, azimuth, losses].some((v) => Number.isNaN(v))) {
+    setStatus('Merci de renseigner des valeurs numériques valides.', 'error');
     return null;
   }
-
   if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-    setStatus('Latitude/longitude hors limites.', true);
+    setStatus('Latitude/longitude hors limites.', 'error');
     return null;
   }
-
   if (tilt < 0 || tilt > 90 || azimuth < -180 || azimuth > 180) {
-    setStatus('Inclinaison ou azimut hors limites.', true);
+    setStatus('Inclinaison ou azimut hors limites.', 'error');
     return null;
   }
-
   if (peakPowerInputW <= 0 || losses < 0 || losses > 100) {
-    setStatus('Puissance/pertes invalides.', true);
+    setStatus('Puissance/pertes invalides.', 'error');
     return null;
   }
-
   if (source === 'pvwatts' && !pvwattsKey) {
-    setStatus('Merci de saisir une clé API PVWatts.', true);
+    setStatus('Merci de saisir une clé API PVWatts.', 'error');
     return null;
   }
-
   if (compareAzimuth && (Number.isNaN(azimuth2) || azimuth2 < -180 || azimuth2 > 180)) {
-    setStatus('Azimut 2 hors limites.', true);
+    setStatus('Azimut 2 hors limites.', 'error');
     return null;
   }
 
-  return {
-    lat,
-    lon,
-    peakPower,
-    tilt,
-    azimuth,
-    // rows for 12 months - compute row height so table fits on a single page
-    doc.setFontSize(10);
-    doc.setTextColor(15,23,42);
-    const footerReserve = 18;
-    const availableTableHeight = pageH - y - margin - footerReserve - 8; // space for footer and padding
-    const desiredRows = 12;
-    const rowSpacing = 3;
-    let rowH = Math.floor((availableTableHeight - (desiredRows - 1) * rowSpacing) / desiredRows);
-    if (rowH < 8) rowH = 8; // minimum readable row height
+  return { lat, lon, peakPower, tilt, azimuth, compareAzimuth, azimuth2, losses, source, pvwattsKey };
+}
 
-    for (let i = 0; i < 12; i++) {
-      xPos = colX;
-      const mLabel = monthsLabels[i] || `Mois ${i+1}`;
-      const a1 = primaryMonthly[i] || 0;
+// ─── API Fetching ──────────────────────────────────────────
+async function fetchFromSource(params) {
+  if (params.source === 'pvwatts') return fetchFromPVWatts(params);
+  return fetchFromPVGIS(params);
+}
 
-      // Month
-      doc.rect(xPos, y, colW, rowH, 'S');
-      doc.text(mLabel, xPos + 3, y + rowH / 2 + 3);
-      xPos += colW;
+async function fetchFromPVGIS({ lat, lon, peakPower, tilt, azimuth, losses }) {
+  const params = new URLSearchParams({
+    lat: String(lat),
+    lon: String(lon),
+    peakpower: String(peakPower),
+    angle: String(tilt),
+    aspect: String(azimuth),
+    loss: String(losses),
+    outputformat: 'json',
+    pvcalculation: '1',
+  });
 
-      // Azimut 1 (right-aligned)
-      doc.rect(xPos, y, colW, rowH, 'S');
-      doc.text(String(a1.toFixed(1)), xPos + colW - 3, y + rowH / 2 + 3, { align: 'right' });
-      xPos += colW;
+  const response = await fetchJSONFromAPI(`/api/pvgis?${params.toString()}`, 'PVGIS');
+  const data = await response.json();
+  const hourlyData = data?.outputs?.hourly;
 
-      if (hasSecondary) {
-        const a2 = (secondaryMonthly && secondaryMonthly[i]) ? secondaryMonthly[i] : 0;
-        // Azimut 2 (right-aligned)
-        doc.rect(xPos, y, colW, rowH, 'S');
-        doc.text(String(a2.toFixed(1)), xPos + colW - 3, y + rowH / 2 + 3, { align: 'right' });
-        xPos += colW;
+  if (!Array.isArray(hourlyData) || hourlyData.length === 0) {
+    throw new Error('PVGIS : pas de données horaires reçues.');
+  }
 
-        // Total (right-aligned)
-        const tot = Number((a1 + a2).toFixed(1));
-        doc.rect(xPos, y, colW, rowH, 'S');
-        doc.text(String(tot.toFixed(1)), xPos + colW - 3, y + rowH / 2 + 3, { align: 'right' });
-      }
+  const hourlyEntries = [];
+  let hasPowerColumn = false;
 
-      y += rowH + rowSpacing;
-      // If somehow overflow (shouldn't), add page and redraw header
-      if (y > pageH - margin - footerReserve) {
-        doc.addPage();
-        // header on new page
-        y = margin + 4;
-        xPos = colX;
-        doc.setFillColor(14,165,233);
-        doc.setTextColor(255,255,255);
-        for (let h = 0; h < headers.length; h++) {
-          doc.rect(xPos, y, colW, headerH, 'F');
-          doc.text(headers[h], xPos + 3, y + 6);
-          xPos += colW;
-        }
-        y += headerH + 4;
-        doc.setTextColor(15,23,42);
-      }
-    }
-      hasPowerColumn = true;
-    }
-    if (Number.isNaN(powerW)) {
-      continue;
-    }
+  for (const row of hourlyData) {
+    const powerW = Number(row.P);
+    if (row.P !== undefined) hasPowerColumn = true;
+    if (Number.isNaN(powerW)) continue;
 
     const parsedTime = parsePVGISTime(row.time);
-    if (!parsedTime) {
-      continue;
-    }
+    if (!parsedTime) continue;
 
     hourlyEntries.push({
       dayKey: parsedTime.dayKey,
@@ -297,19 +297,15 @@ function getInputs() {
 
   if (!hasPowerColumn) {
     throw new Error(
-      "PVGIS n'a pas renvoyé de puissance PV (champ P). Vérifie le proxy /api/pvgis et les paramètres de calcul PV."
+      "PVGIS n'a pas renvoyé de puissance PV (champ P). Vérifie le proxy /api/pvgis et les paramètres."
     );
   }
 
-  return {
-    hourlyEntries,
-    dailyData: aggregateDailyData(hourlyEntries),
-  };
+  return { hourlyEntries, dailyData: aggregateDailyData(hourlyEntries) };
 }
 
 async function fetchFromPVWatts({ lat, lon, peakPower, tilt, azimuth, losses, pvwattsKey }) {
   const normalizedAzimuth = azimuthSouthToAzimuthNorthClockwise(azimuth);
-
   const params = new URLSearchParams({
     api_key: pvwattsKey,
     lat: String(lat),
@@ -323,31 +319,19 @@ async function fetchFromPVWatts({ lat, lon, peakPower, tilt, azimuth, losses, pv
     timeframe: 'hourly',
   });
 
-  const response = await fetchJSONFromAPI(
-    `/api/pvwatts?${params.toString()}`,
-    'PVWatts'
-  );
-
+  const response = await fetchJSONFromAPI(`/api/pvwatts?${params.toString()}`, 'PVWatts');
   const data = await response.json();
   const errors = data?.errors;
-  if (Array.isArray(errors) && errors.length > 0) {
-    throw new Error(`PVWatts: ${errors.join(', ')}`);
-  }
+  if (Array.isArray(errors) && errors.length > 0) throw new Error(`PVWatts: ${errors.join(', ')}`);
 
   const ac = data?.outputs?.ac;
-  if (!Array.isArray(ac) || ac.length === 0) {
-    throw new Error('Réponse PVWatts invalide.');
-  }
+  if (!Array.isArray(ac) || ac.length === 0) throw new Error('Réponse PVWatts invalide.');
 
   const year = 2020;
   const hourlyEntries = [];
-
   for (let i = 0; i < ac.length; i += 1) {
     const powerW = Number(ac[i]);
-    if (Number.isNaN(powerW)) {
-      continue;
-    }
-
+    if (Number.isNaN(powerW)) continue;
     const date = new Date(Date.UTC(year, 0, 1, 0, 0, 0));
     date.setUTCHours(i);
     hourlyEntries.push({
@@ -358,72 +342,94 @@ async function fetchFromPVWatts({ lat, lon, peakPower, tilt, azimuth, losses, pv
     });
   }
 
-  return {
-    hourlyEntries,
-    dailyData: aggregateDailyData(hourlyEntries),
-  };
+  return { hourlyEntries, dailyData: aggregateDailyData(hourlyEntries) };
 }
 
 async function fetchJSONFromAPI(apiUrl, sourceName) {
   let response;
-
   try {
     response = await fetch(apiUrl);
   } catch {
     throw new Error(`${sourceName}: endpoint ${apiUrl} inaccessible.`);
   }
-
   if (!response.ok) {
     throw new Error(`${sourceName} indisponible via ${apiUrl} (${response.status}).`);
   }
-
   return response;
 }
 
 function parsePVGISTime(time) {
-  if (typeof time !== 'string') {
-    return null;
-  }
-
+  if (typeof time !== 'string') return null;
   const match = time.match(/^(\d{4})(\d{2})(\d{2}):?(\d{2})/);
-  if (!match) {
-    return null;
-  }
-
+  if (!match) return null;
   const [, yyyy, mm, dd, hh] = match;
-  return {
-    dayKey: `${yyyy}-${mm}-${dd}`,
-    month: Number(mm),
-    hour: Number(hh),
-  };
+  return { dayKey: `${yyyy}-${mm}-${dd}`, month: Number(mm), hour: Number(hh) };
 }
 
+// ─── Data Processing ───────────────────────────────────────
 function aggregateDailyData(hourlyEntries) {
   const byDay = new Map();
-
   for (const entry of hourlyEntries) {
-    const previous = byDay.get(entry.dayKey) ?? 0;
-    byDay.set(entry.dayKey, previous + entry.kwh);
+    byDay.set(entry.dayKey, (byDay.get(entry.dayKey) ?? 0) + entry.kwh);
   }
-
   return [...byDay.entries()]
-    .sort(([dayA], [dayB]) => dayA.localeCompare(dayB))
+    .sort(([a], [b]) => a.localeCompare(b))
     .map(([day, value]) => ({ day, kwh: Number(value.toFixed(3)) }));
 }
 
+function buildMonthlyAverageProfile(hourlyEntries, month) {
+  const sums = Array.from({ length: 24 }, () => 0);
+  const days = new Set();
+  for (const e of hourlyEntries) {
+    if (e.month === month) {
+      sums[e.hour] += e.kwh;
+      days.add(e.dayKey);
+    }
+  }
+  const count = Math.max(1, days.size);
+  return sums.map((v) => Number((v / count).toFixed(3)));
+}
+
+function buildSpecificDayProfile(hourlyEntries, dayKey) {
+  const profile = Array.from({ length: 24 }, () => 0);
+  for (const entry of hourlyEntries) {
+    if (entry.dayKey === dayKey) profile[entry.hour] += entry.kwh;
+  }
+  return profile.map((v) => Number(v.toFixed(3)));
+}
+
+function sumProfiles(profileA, profileB) {
+  const size = Math.min(profileA.length, profileB.length);
+  const output = [];
+  for (let i = 0; i < size; i++) output.push(Number((profileA[i] + profileB[i]).toFixed(3)));
+  return output;
+}
+
+function computeMonthlyTotalsFromDaily(dailyArray) {
+  const months = Array.from({ length: 12 }, () => 0);
+  for (const row of dailyArray) {
+    const parts = String(row.day).split('-');
+    if (parts.length >= 2) {
+      const month = Number(parts[1]);
+      if (!Number.isNaN(month) && month >= 1 && month <= 12) months[month - 1] += row.kwh;
+    }
+  }
+  return months.map((v) => Number(v.toFixed(3)));
+}
+
+// ─── Azimuth Conversion ────────────────────────────────────
 function azimuthSouthToAzimuthNorthClockwise(azimuthSouth) {
   const result = 180 - azimuthSouth;
   return ((result % 360) + 360) % 360;
 }
 
 function azimuthNorthClockwiseToAzimuthSouth(bearing) {
-  const result = 180 - bearing;
-  return normalizeAzimuthSouth(result);
+  return normalizeAzimuthSouth(180 - bearing);
 }
 
 function normalizeAzimuthSouth(value) {
-  const normalized = ((value + 180) % 360 + 360) % 360 - 180;
-  return normalized === -180 ? 180 : normalized;
+  const n = ((value + 180) % 360 + 360) % 360 - 180;
+  return n === -180 ? 180 : n;
 }
 
 function getOppositeAzimuth(azimuthSouth) {
@@ -431,37 +437,30 @@ function getOppositeAzimuth(azimuthSouth) {
 }
 
 function setAutoOppositeAzimuth(force = false) {
-  if (!compareAzimuthCheckbox.checked && !force) {
-    return;
-  }
-
-  if (!force && azimuth2Input.dataset.auto === 'false') {
-    return;
-  }
-
+  if (!compareAzimuthCheckbox.checked && !force) return;
+  if (!force && azimuth2Input.dataset.auto === 'false') return;
   const azimuthSouth = Number(azimuthInput.value);
-  if (Number.isNaN(azimuthSouth)) {
-    return;
-  }
-
+  if (Number.isNaN(azimuthSouth)) return;
   azimuth2Input.value = String(getOppositeAzimuth(azimuthSouth));
   azimuth2Input.dataset.auto = 'true';
 }
 
+// ─── Chart Rendering ───────────────────────────────────────
+const CHART_COLORS = {
+  primary: '#ef4444',
+  secondary: '#2563eb',
+  sum: '#059669',
+  sumFill: 'rgba(5,150,105,.08)',
+  june: '#f59e0b',
+  december: '#94a3b8',
+};
+
 function updateSelectedDayChart() {
   const selectedIndex = Number(daySlider.value) - 1;
-  if (
-    !currentPrimaryHourlyEntries.length ||
-    !currentPrimaryDailyData.length ||
-    Number.isNaN(selectedIndex)
-  ) {
-    return;
-  }
+  if (!currentPrimaryHourlyEntries.length || !currentPrimaryDailyData.length || Number.isNaN(selectedIndex)) return;
 
   const selectedDay = currentPrimaryDailyData[selectedIndex];
-  if (!selectedDay) {
-    return;
-  }
+  if (!selectedDay) return;
 
   dayLabel.textContent = formatDayLabel(selectedDay.day);
 
@@ -471,7 +470,7 @@ function updateSelectedDayChart() {
     : null;
   const juneLimit = buildSpecificDayProfile(currentPrimaryHourlyEntries, '2020-06-21');
   const decemberLimit = buildSpecificDayProfile(currentPrimaryHourlyEntries, '2020-12-21');
-  const labels = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}h`);
+  const labels = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}h`);
   const datasets = buildDailyDatasets(selectedProfile, secondaryProfile, juneLimit, decemberLimit);
 
   if (dailyProfileChart) {
@@ -483,38 +482,74 @@ function updateSelectedDayChart() {
 
   dailyProfileChart = new Chart(dailyProfileChartCanvas, {
     type: 'line',
-    data: {
-      labels,
-      datasets,
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        y: {
-          title: {
-            display: true,
-            text: 'kWh / heure',
-          },
-        },
-      },
-    },
+    data: { labels, datasets },
+    options: chartOptions('kWh / heure'),
   });
 }
 
-function buildMonthlyAverageProfile(hourlyEntries, month) {
-  const sums = Array.from({ length: 24 }, () => 0);
-  const days = new Set();
+function buildDailyDatasets(selectedProfile, secondaryProfile, juneLimit, decemberLimit) {
+  const datasets = [
+    {
+      label: `Azimut ${currentPrimaryAzimuth}° (${dayLabel.textContent})`,
+      data: selectedProfile,
+      borderWidth: 2.5,
+      borderColor: CHART_COLORS.primary,
+      backgroundColor: 'rgba(239,68,68,.06)',
+      fill: true,
+      tension: 0.3,
+      pointRadius: 0,
+    },
+  ];
 
-  for (const e of hourlyEntries) {
-    if (e.month === month) {
-      sums[e.hour] += e.kwh;
-      days.add(e.dayKey);
-    }
+  if (secondaryProfile) {
+    datasets.push(
+      {
+        label: `Azimut ${currentSecondaryAzimuth}° (${dayLabel.textContent})`,
+        data: secondaryProfile,
+        borderWidth: 2,
+        borderColor: CHART_COLORS.secondary,
+        borderDash: [10, 4],
+        tension: 0.3,
+        pointRadius: 0,
+        fill: false,
+      },
+      {
+        label: `Somme (${currentPrimaryAzimuth}° + ${currentSecondaryAzimuth}°)`,
+        data: sumProfiles(selectedProfile, secondaryProfile),
+        borderWidth: 2.5,
+        borderColor: CHART_COLORS.sum,
+        backgroundColor: CHART_COLORS.sumFill,
+        fill: true,
+        tension: 0.3,
+        pointRadius: 0,
+      }
+    );
+  } else {
+    datasets.push(
+      {
+        label: 'Limite été (21 juin)',
+        data: juneLimit,
+        borderWidth: 1.5,
+        borderColor: CHART_COLORS.june,
+        borderDash: [8, 4],
+        tension: 0.3,
+        pointRadius: 0,
+        fill: false,
+      },
+      {
+        label: 'Limite hiver (21 déc.)',
+        data: decemberLimit,
+        borderWidth: 1.5,
+        borderColor: CHART_COLORS.december,
+        borderDash: [4, 4],
+        tension: 0.3,
+        pointRadius: 0,
+        fill: false,
+      }
+    );
   }
 
-  const count = Math.max(1, days.size);
-  return sums.map((v) => Number((v / count).toFixed(3)));
+  return datasets;
 }
 
 function updateMonthlyChart() {
@@ -526,38 +561,45 @@ function updateMonthlyChart() {
     ? buildMonthlyAverageProfile(currentSecondaryHourlyEntries, selectedMonth)
     : null;
 
-  const datasets = [];
-  datasets.push({
-    label: `Azimut ${currentPrimaryAzimuth}° (moyenne mois ${selectedMonth})`,
-    data: primaryMonthly,
-    borderWidth: 2.2,
-    borderColor: '#ef4444',
-    tension: 0.2,
-    pointRadius: 0,
-  });
+  const datasets = [
+    {
+      label: `Azimut ${currentPrimaryAzimuth}° (mois ${selectedMonth})`,
+      data: primaryMonthly,
+      borderWidth: 2.5,
+      borderColor: CHART_COLORS.primary,
+      backgroundColor: 'rgba(239,68,68,.06)',
+      fill: true,
+      tension: 0.3,
+      pointRadius: 0,
+    },
+  ];
 
   if (secondaryMonthly) {
-    datasets.push({
-      label: `Azimut ${currentSecondaryAzimuth}° (moyenne mois ${selectedMonth})`,
-      data: secondaryMonthly,
-      borderWidth: 2,
-      borderColor: '#2563eb',
-      borderDash: [10, 4],
-      tension: 0.2,
-      pointRadius: 0,
-    });
-
-    datasets.push({
-      label: `Somme (${currentPrimaryAzimuth}° + ${currentSecondaryAzimuth}°)` ,
-      data: sumProfiles(primaryMonthly, secondaryMonthly),
-      borderWidth: 2.4,
-      borderColor: '#059669',
-      tension: 0.2,
-      pointRadius: 0,
-    });
+    datasets.push(
+      {
+        label: `Azimut ${currentSecondaryAzimuth}° (mois ${selectedMonth})`,
+        data: secondaryMonthly,
+        borderWidth: 2,
+        borderColor: CHART_COLORS.secondary,
+        borderDash: [10, 4],
+        tension: 0.3,
+        pointRadius: 0,
+        fill: false,
+      },
+      {
+        label: `Somme (${currentPrimaryAzimuth}° + ${currentSecondaryAzimuth}°)`,
+        data: sumProfiles(primaryMonthly, secondaryMonthly),
+        borderWidth: 2.5,
+        borderColor: CHART_COLORS.sum,
+        backgroundColor: CHART_COLORS.sumFill,
+        fill: true,
+        tension: 0.3,
+        pointRadius: 0,
+      }
+    );
   }
 
-  const labels = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}h`);
+  const labels = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}h`);
 
   if (monthlyProfileChart) {
     monthlyProfileChart.data.labels = labels;
@@ -568,347 +610,127 @@ function updateMonthlyChart() {
 
   monthlyProfileChart = new Chart(monthlyProfileChartCanvas, {
     type: 'line',
-    data: {
-      labels,
-      datasets,
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        y: {
-          title: {
-            display: true,
-            text: 'kWh / heure',
-          },
-        },
+    data: { labels, datasets },
+    options: chartOptions('kWh / heure'),
+  });
+}
+
+function chartOptions(yLabel) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: {
+        position: 'bottom',
+        labels: { padding: 16, usePointStyle: true, pointStyleWidth: 12, font: { size: 12 } },
+      },
+      tooltip: {
+        backgroundColor: '#0f172a',
+        titleFont: { size: 13 },
+        bodyFont: { size: 12 },
+        padding: 10,
+        cornerRadius: 8,
+        displayColors: true,
       },
     },
-  });
+    scales: {
+      x: {
+        grid: { display: false },
+        ticks: { font: { size: 11 }, color: '#64748b' },
+      },
+      y: {
+        title: { display: true, text: yLabel, font: { size: 12 }, color: '#64748b' },
+        grid: { color: 'rgba(0,0,0,.05)' },
+        ticks: { font: { size: 11 }, color: '#64748b' },
+      },
+    },
+  };
 }
 
-function computeMonthlyTotalsFromDaily(dailyArray) {
-  const months = Array.from({ length: 12 }, () => 0);
-  for (const row of dailyArray) {
-    const parts = String(row.day).split('-');
-    if (parts.length >= 2) {
-      const month = Number(parts[1]);
-      if (!Number.isNaN(month) && month >= 1 && month <= 12) {
-        months[month - 1] += row.kwh;
-      }
-    }
+// ─── Stats Rendering ───────────────────────────────────────
+function renderStats(dailyData, secondaryDailyData = null) {
+  if (secondaryDailyData?.length) {
+    const mapByDay = new Map();
+    for (const row of dailyData) mapByDay.set(row.day, (mapByDay.get(row.day) || 0) + row.kwh);
+    for (const row of secondaryDailyData) mapByDay.set(row.day, (mapByDay.get(row.day) || 0) + row.kwh);
+
+    const combined = [...mapByDay.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([day, kwh]) => ({ day, kwh: Number(kwh.toFixed(3)) }));
+
+    const totalCombined = combined.reduce((a, r) => a + r.kwh, 0);
+    const avgCombined = totalCombined / combined.length;
+    const sorted = [...combined].sort((a, b) => a.kwh - b.kwh);
+    const minC = sorted[0];
+    const maxC = sorted[sorted.length - 1];
+
+    const totalPrimary = dailyData.reduce((a, r) => a + r.kwh, 0);
+    const totalSecondary = secondaryDailyData.reduce((a, r) => a + r.kwh, 0);
+    const total = totalPrimary + totalSecondary;
+    const pct1 = total > 0 ? (totalPrimary / total) * 100 : 0;
+    const pct2 = total > 0 ? (totalSecondary / total) * 100 : 0;
+
+    statsEl.innerHTML = [
+      statCard('Total annuel (2 azimuts)', `${totalCombined.toFixed(1)} kWh`),
+      statCard('Moyenne / jour', `${avgCombined.toFixed(2)} kWh`),
+      statCard('Jour le plus faible', `${minC.day} · ${minC.kwh.toFixed(2)} kWh`),
+      statCard('Jour le plus productif', `${maxC.day} · ${maxC.kwh.toFixed(2)} kWh`),
+      statCard(`Part azimut ${currentPrimaryAzimuth}°`, `${pct1.toFixed(1)} %`),
+      statCard(`Part azimut ${currentSecondaryAzimuth}°`, `${pct2.toFixed(1)} %`),
+    ].join('');
+    return;
   }
-  return months.map((v) => Number(v.toFixed(3)));
+
+  const total = dailyData.reduce((a, r) => a + r.kwh, 0);
+  const avg = total / dailyData.length;
+  const sorted = [...dailyData].sort((a, b) => a.kwh - b.kwh);
+
+  statsEl.innerHTML = [
+    statCard('Total annuel', `${total.toFixed(1)} kWh`),
+    statCard('Moyenne / jour', `${avg.toFixed(2)} kWh`),
+    statCard('Jour le plus faible', `${sorted[0].day} · ${sorted[0].kwh.toFixed(2)} kWh`),
+    statCard('Jour le plus productif', `${sorted[sorted.length - 1].day} · ${sorted[sorted.length - 1].kwh.toFixed(2)} kWh`),
+  ].join('');
 }
 
-async function exportToPDF() {
+function statCard(title, value) {
+  return `<div class="stat-item"><strong>${title}</strong><span class="stat-value">${value}</span></div>`;
+}
+
+// ─── UI Helpers ────────────────────────────────────────────
+function setStatus(message, type = '') {
+  if (statusTextEl) statusTextEl.textContent = message;
+  statusEl.classList.remove('is-error', 'is-success');
+  if (type === 'error') statusEl.classList.add('is-error');
+  else if (type === 'success') statusEl.classList.add('is-success');
+}
+
+function toggleLoading(isLoading) {
+  estimateBtn.disabled = isLoading;
+  const span = estimateBtn.querySelector('span');
+  if (span) span.textContent = isLoading ? 'Calcul…' : 'Estimer la production';
+  if (loadingOverlay) loadingOverlay.classList.toggle('hidden', !isLoading);
+}
+
+function hideResults() {
   try {
-    // Build monthly totals
-    const primaryMonthly = computeMonthlyTotalsFromDaily(currentPrimaryDailyData);
-    const secondaryMonthly = currentSecondaryDailyData.length
-      ? computeMonthlyTotalsFromDaily(currentSecondaryDailyData)
-      : null;
-
-    const monthsLabels = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
-
-    // Create offscreen canvas for chart (higher resolution)
-    const canvas = document.createElement('canvas');
-    const canvasW = 1600;
-    const canvasH = 800;
-    canvas.width = canvasW;
-    canvas.height = canvasH;
-    canvas.style.display = 'none';
-    document.body.appendChild(canvas);
-
-    const datasets = [
-      {
-        label: `Azimut ${currentPrimaryAzimuth}°`,
-        data: primaryMonthly,
-        backgroundColor: '#ef6a6a',
-        borderColor: '#ef4444',
-        borderWidth: 1
-      }
-    ];
-    if (secondaryMonthly) {
-      datasets.push({
-        label: `Azimut ${currentSecondaryAzimuth}°`,
-        data: secondaryMonthly,
-        backgroundColor: '#6aa6ff',
-        borderColor: '#2563eb',
-        borderWidth: 1
-      });
-    }
-
-    const tmpChart = new Chart(canvas.getContext('2d'), {
-      type: 'bar',
-      data: { labels: monthsLabels, datasets },
-      options: {
-        responsive: false,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: true, position: 'top' } },
-        scales: { y: { title: { display: true, text: 'kWh' } } }
-      }
-    });
-
-    await new Promise((r) => setTimeout(r, 300));
-    const imgData = canvas.toDataURL('image/png', 1.0);
-    tmpChart.destroy();
-    document.body.removeChild(canvas);
-
-    // Prepare PDF (A4 landscape)
-    // Support different UMD/global shapes for jsPDF
-    const jsPDFGlobal = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF || (window.jspdf || null);
-    if (!jsPDFGlobal) {
-      throw new Error('jsPDF library not found. Ensure jspdf.umd.min.js is loaded.');
-    }
-    const DocConstructor = typeof jsPDFGlobal === 'function' ? jsPDFGlobal : jsPDFGlobal.jsPDF || jsPDFGlobal;
-    const doc = new DocConstructor({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-    const pageW = doc.internal.pageSize.getWidth();
-    const pageH = doc.internal.pageSize.getHeight();
-    const margin = 14;
-    let y = margin;
-
-    // Header block
-    doc.setFillColor(15,23,42); // #0f172a
-    doc.rect(0, 0, pageW, 28, 'F');
-    doc.setTextColor(255,255,255);
-    doc.setFontSize(18);
-    doc.text('Récapitulatif SolarCurve', margin, 18);
-    doc.setFontSize(10);
-    doc.text(`Export : ${new Date().toLocaleString()}`, pageW - margin, 18, { align: 'right' });
-    y = 34;
-
-    // Inputs card
-    doc.setFillColor(243,244,246); // light gray
-    doc.setDrawColor(226,232,240);
-    const cardH = 16;
-    doc.rect(margin, y, pageW - margin * 2, cardH, 'FD');
-    doc.setTextColor(15,23,42);
-    doc.setFontSize(10);
-    const inputs = [];
-    inputs.push(`Position: ${latInput.value || '-'} , ${lonInput.value || '-'}`);
-    inputs.push(`Puissance (Wc): ${document.getElementById('peakPower').value} W`);
-    inputs.push(`Inclinaison: ${document.getElementById('tilt').value}°`);
-    inputs.push(`Azimut 1: ${currentPrimaryAzimuth ?? document.getElementById('azimuth').value}°`);
-    if (currentSecondaryAzimuth !== null) inputs.push(`Azimut 2: ${currentSecondaryAzimuth}°`);
-    inputs.push(`Pertes: ${document.getElementById('losses').value} %`);
-    doc.text(inputs.join(' · '), margin + 4, y + 10);
-    y += cardH + 8;
-
-    // Chart image - scale down if it would overflow the first page
-    const imgWmm = pageW - margin * 2;
-    let imgHmm = (imgWmm * (canvasH / canvasW));
-    // compute remaining vertical space on page for stats and margin
-    const reservedForStats = 40; // space for stats text
-    const maxImgHmm = pageH - y - reservedForStats - margin;
-    if (imgHmm > maxImgHmm) imgHmm = Math.max(40, maxImgHmm);
-    doc.addImage(imgData, 'PNG', margin, y, imgWmm, imgHmm);
-    y += imgHmm + 8;
-
-    // Summary stats under chart
-    const totalYearPrimary = primaryMonthly.reduce((a,b) => a + b, 0);
-    const totalYearSecondary = secondaryMonthly ? secondaryMonthly.reduce((a,b) => a + b, 0) : 0;
-    const totalCombined = totalYearPrimary + totalYearSecondary;
-    doc.setFontSize(11);
-    doc.text(`Total annuel Azimut ${currentPrimaryAzimuth}°: ${totalYearPrimary.toFixed(1)} kWh`, margin, y);
-    y += 6;
-    if (secondaryMonthly) {
-      doc.text(`Total annuel Azimut ${currentSecondaryAzimuth}°: ${totalYearSecondary.toFixed(1)} kWh`, margin, y);
-      y += 6;
-      const pct1 = totalCombined > 0 ? (totalYearPrimary / totalCombined) * 100 : 0;
-      const pct2 = totalCombined > 0 ? (totalYearSecondary / totalCombined) * 100 : 0;
-      doc.text(`% production ${currentPrimaryAzimuth}°: ${pct1.toFixed(1)} %`, margin, y);
-      doc.text(`% production ${currentSecondaryAzimuth}°: ${pct2.toFixed(1)} %`, pageW - margin - 60, y);
-      y += 8;
-    }
-
-    // Page break
-    doc.addPage();
-
-    // Page 2 - Detailed monthly table
-    doc.setFillColor(15,23,42);
-    doc.rect(0, 0, pageW, 22, 'F');
-    doc.setTextColor(255,255,255);
-    doc.setFontSize(14);
-    doc.text('Détails mensuels', margin, 14);
-    y = 28;
-
-    const colX = margin;
-    const hasSecondary = Boolean(secondaryMonthly);
-    const colsCount = hasSecondary ? 4 : 2; // Mois, Az1, (Az2), (Total)
-    const colW = Math.min(70, Math.floor((pageW - margin * 2) / colsCount));
-    doc.setFontSize(10);
-    doc.setFillColor(14,165,233); // bluish header
-    doc.setTextColor(255,255,255);
-    const headerH = 8;
-    const headers = ['Mois', `Production estimée (${currentPrimaryAzimuth}°) (kWh)`];
-    if (hasSecondary) headers.push(`Production estimée (${currentSecondaryAzimuth}°) (kWh)`, 'Total (kWh)');
-    // draw header
-    let xPos = colX;
-    for (let i = 0; i < headers.length; i++) {
-      doc.rect(xPos, y, colW, headerH, 'F');
-      doc.text(headers[i], xPos + 3, y + 6);
-      xPos += colW;
-    }
-    y += headerH + 4;
-
-    // rows for 12 months
-    const rowH = 10;
-    doc.setFontSize(10);
-    doc.setTextColor(15,23,42);
-    for (let i = 0; i < 12; i++) {
-      xPos = colX;
-      const mLabel = monthsLabels[i] || `Mois ${i+1}`;
-      const a1 = primaryMonthly[i] || 0;
-
-      // Month
-      doc.rect(xPos, y, colW, rowH, 'S');
-      doc.text(mLabel, xPos + 3, y + 7);
-      xPos += colW;
-
-      // Azimut 1 / Production estimée
-      doc.rect(xPos, y, colW, rowH, 'S');
-      doc.text(String(a1.toFixed(1)), xPos + 3, y + 7);
-      xPos += colW;
-
-      if (hasSecondary) {
-        const a2 = (secondaryMonthly && secondaryMonthly[i]) ? secondaryMonthly[i] : 0;
-        // Azimut 2 / Production estimée
-        doc.rect(xPos, y, colW, rowH, 'S');
-        doc.text(String(a2.toFixed(1)), xPos + 3, y + 7);
-        xPos += colW;
-
-        // Total
-        const tot = Number((a1 + a2).toFixed(1));
-        doc.rect(xPos, y, colW, rowH, 'S');
-        doc.text(String(tot.toFixed(1)), xPos + 3, y + 7);
-      }
-
-      y += rowH + 4;
-      if (y > pageH - margin - 20) {
-        doc.addPage();
-        // redraw header on new page
-        y = margin + 4;
-        xPos = colX;
-        doc.setFillColor(14,165,233);
-        doc.setTextColor(255,255,255);
-        for (let h = 0; h < headers.length; h++) {
-          doc.rect(xPos, y, colW, headerH, 'F');
-          doc.text(headers[h], xPos + 3, y + 6);
-          xPos += colW;
-        }
-        y += headerH + 4;
-        doc.setTextColor(15,23,42);
-      }
-    }
-
-    // --- Additional pages: hourly monthly average charts (4 per page) ---
-    // Helper to compute hourly average for a month
-    function monthlyHourly(hoursArray, month) {
-      // reuse buildMonthlyAverageProfile but operate on current data arrays
-      return buildMonthlyAverageProfile(hoursArray, month);
-    }
-
-    const chartCols = 3;
-    const chartRows = 4;
-    const chartMargin = 8;
-    const monthsToRender = 12;
-    let chartImages = [];
-
-    for (let m = 1; m <= monthsToRender; m++) {
-      const pm = monthlyHourly(currentPrimaryHourlyEntries, m);
-      const sm = (hasSecondary && currentSecondaryHourlyEntries && currentSecondaryHourlyEntries.length)
-        ? monthlyHourly(currentSecondaryHourlyEntries, m)
-        : null;
-
-      // create canvas per chart
-      const c = document.createElement('canvas');
-      c.width = 1200;
-      c.height = 600;
-      c.style.display = 'none';
-      document.body.appendChild(c);
-
-      const dsets = [
-        {
-          label: `Azimut ${currentPrimaryAzimuth}°`,
-          data: pm,
-          borderColor: '#ef4444',
-          backgroundColor: '#ef9a9a',
-          fill: false,
-          tension: 0.2,
-          pointRadius: 0,
-          borderWidth: 1.6,
-        }
-      ];
-      if (sm) {
-        dsets.push({
-          label: `Azimut ${currentSecondaryAzimuth}°`,
-          data: sm,
-          borderColor: '#2563eb',
-          backgroundColor: '#9ec6ff',
-          fill: false,
-          tension: 0.2,
-          pointRadius: 0,
-          borderWidth: 1.6,
-        });
-      }
-
-      const ch = new Chart(c.getContext('2d'), {
-        type: 'line',
-        data: { labels: Array.from({length:24},(_,h)=>`${h}h`), datasets: dsets },
-        options: { responsive:false, maintainAspectRatio:false, plugins:{ legend:{ display: false } }, scales:{ y:{ title:{ display:true, text:'kWh' } } } }
-      });
-
-      // allow rendering
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise((r) => setTimeout(r, 200));
-      const im = c.toDataURL('image/png',1.0);
-      ch.destroy();
-      document.body.removeChild(c);
-      chartImages.push({ month: m, src: im });
-    }
-
-    // Draw all 12 charts on a single page in a 3x4 grid
-    doc.addPage();
-    const topSpace = margin + 8;
-    const availableW = pageW - margin * 2 - chartMargin * (chartCols - 1);
-    const availableH = pageH - topSpace - margin - 18; // leave bottom margin for footer
-    const chartWmm = availableW / chartCols;
-    const chartHmm = availableH / chartRows - 8; // small vertical padding
-
-    for (let idx = 0; idx < chartImages.length; idx++) {
-      const col = idx % chartCols;
-      const row = Math.floor(idx / chartCols);
-      const x = margin + col * (chartWmm + chartMargin);
-      const yPos = topSpace + row * (chartHmm + chartMargin + 8);
-      // title
-      doc.setFontSize(10);
-      doc.setTextColor(15,23,42);
-      const monthName = monthsLabels[chartImages[idx].month - 1] || `Mois ${chartImages[idx].month}`;
-      const title = `${monthName} - Profil horaire moyen`;
-      doc.text(title, x, yPos);
-      // image below title
-      const imgY = yPos + 4;
-      doc.addImage(chartImages[idx].src, 'PNG', x, imgY, chartWmm, chartHmm - 12);
-    }
-
-    // Footer note
-    doc.setFontSize(9);
-    doc.setTextColor(120,120,120);
-    doc.text('Export généré par SolarCurve — données fournies à titre indicatif', margin, pageH - 10);
-
-    const filename = `SolarCurve_recap_${new Date().toISOString().slice(0,10)}.pdf`;
-    doc.save(filename);
-  } catch (err) {
-    console.error('Export PDF failed', err);
-    alert('Erreur lors de la génération du PDF. Voir la console.');
-  }
+    const resultsArea = document.getElementById('resultsArea');
+    if (resultsArea) resultsArea.classList.add('hidden');
+    if (statsEl) statsEl.classList.add('hidden');
+    const exportArea = document.getElementById('exportArea');
+    if (exportArea) exportArea.classList.add('hidden');
+  } catch { /* ignore */ }
 }
 
-if (exportPdfBtn) {
-  exportPdfBtn.addEventListener('click', () => {
-    exportToPDF();
-  });
+function showResults() {
+  try {
+    const resultsArea = document.getElementById('resultsArea');
+    if (resultsArea) resultsArea.classList.remove('hidden');
+    if (statsEl) statsEl.classList.remove('hidden');
+    const exportArea = document.getElementById('exportArea');
+    if (exportArea) exportArea.classList.remove('hidden');
+  } catch { /* ignore */ }
 }
 
 function updateDayButtonsState() {
@@ -920,247 +742,17 @@ function updateDayButtonsState() {
   if (nextDayBtn) nextDayBtn.disabled = val >= max || daySlider.disabled;
 }
 
-if (prevDayBtn) {
-  prevDayBtn.addEventListener('click', () => {
-    if (!daySlider || daySlider.disabled) return;
-    const min = Number(daySlider.min || 1);
-    let v = Number(daySlider.value || min);
-    if (v > min) v -= 1;
-    daySlider.value = String(v);
-    updateSelectedDayChart();
-    updateDayButtonsState();
-  });
-}
-
-if (nextDayBtn) {
-  nextDayBtn.addEventListener('click', () => {
-    if (!daySlider || daySlider.disabled) return;
-    const max = Number(daySlider.max || 1);
-    let v = Number(daySlider.value || 1);
-    if (v < max) v += 1;
-    daySlider.value = String(v);
-    updateSelectedDayChart();
-    updateDayButtonsState();
-  });
-}
-
-function buildDailyDatasets(selectedProfile, secondaryProfile, juneLimit, decemberLimit) {
-  const datasets = [
-    {
-      label: `Azimut ${currentPrimaryAzimuth}° (${dayLabel.textContent})`,
-      data: selectedProfile,
-      borderWidth: 2.2,
-      borderColor: '#ef4444',
-      tension: 0.2,
-      pointRadius: 0,
-    },
-  ];
-
-  if (secondaryProfile) {
-    const summedProfile = sumProfiles(selectedProfile, secondaryProfile);
-
-    datasets.push({
-      label: `Azimut ${currentSecondaryAzimuth}° (${dayLabel.textContent})`,
-      data: secondaryProfile,
-      borderWidth: 2,
-      borderColor: '#2563eb',
-      borderDash: [10, 4],
-      tension: 0.2,
-      pointRadius: 0,
-    });
-
-    datasets.push({
-      label: `Somme (${currentPrimaryAzimuth}° + ${currentSecondaryAzimuth}°)`,
-      data: summedProfile,
-      borderWidth: 2.4,
-      borderColor: '#059669',
-      tension: 0.2,
-      pointRadius: 0,
-    });
-  }
-  // Affiche les limites été/hiver uniquement quand on n'affiche pas la comparaison
-  if (!secondaryProfile) {
-    datasets.push(
-      {
-        label: 'Limite été (21 juin)',
-        data: juneLimit,
-        borderWidth: 1.6,
-        borderDash: [8, 4],
-        tension: 0.2,
-        pointRadius: 0,
-      },
-      {
-        label: 'Limite hiver (21 décembre)',
-        data: decemberLimit,
-        borderWidth: 1.6,
-        borderDash: [4, 4],
-        tension: 0.2,
-        pointRadius: 0,
-      }
-    );
-  }
-
-  return datasets;
-}
-
-function sumProfiles(profileA, profileB) {
-  const size = Math.min(profileA.length, profileB.length);
-  const output = [];
-
-  for (let index = 0; index < size; index += 1) {
-    output.push(Number((profileA[index] + profileB[index]).toFixed(3)));
-  }
-
-  return output;
-}
-
-function buildSpecificDayProfile(hourlyEntries, dayKey) {
-  const profile = Array.from({ length: 24 }, () => 0);
-
-  for (const entry of hourlyEntries) {
-    if (entry.dayKey === dayKey) {
-      profile[entry.hour] += entry.kwh;
-    }
-  }
-
-  return profile.map((value) => Number(value.toFixed(3)));
-}
-
-function renderStats(dailyData, secondaryDailyData = null) {
-  // If there's a secondary dataset, compute aggregated stats (sum per day) across both azimuths
-  if (secondaryDailyData?.length) {
-    const mapByDay = new Map();
-
-    for (const row of dailyData) {
-      mapByDay.set(row.day, (mapByDay.get(row.day) || 0) + row.kwh);
-    }
-    for (const row of secondaryDailyData) {
-      mapByDay.set(row.day, (mapByDay.get(row.day) || 0) + row.kwh);
-    }
-
-    const combined = [...mapByDay.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([day, kwh]) => ({ day, kwh: Number(kwh.toFixed(3)) }));
-
-    const totalCombined = combined.reduce((acc, r) => acc + r.kwh, 0);
-    const avgCombined = totalCombined / combined.length;
-
-    const sortedCombined = [...combined].sort((a, b) => a.kwh - b.kwh);
-    const minCombined = sortedCombined[0];
-    const maxCombined = sortedCombined[sortedCombined.length - 1];
-
-    const cards = [
-      statCard('Total annuel (2 azimuts)', `${totalCombined.toFixed(1)} kWh`),
-      statCard('Moyenne/jour (2 azimuts)', `${avgCombined.toFixed(2)} kWh`),
-      statCard('Jour le plus faible (2 azimuts)', `${minCombined.day} · ${minCombined.kwh.toFixed(2)} kWh`),
-      statCard('Jour le plus productif (2 azimuts)', `${maxCombined.day} · ${maxCombined.kwh.toFixed(2)} kWh`),
-    ];
-
-    // Show percentage contribution of each azimuth to the combined production
-    const totalPrimary = dailyData.reduce((acc, r) => acc + r.kwh, 0);
-    const totalSecondary = secondaryDailyData.reduce((acc, r) => acc + r.kwh, 0);
-    const totalBothAzimuts = totalPrimary + totalSecondary;
-    const pctPrimary = totalBothAzimuts > 0 ? (totalPrimary / totalBothAzimuts) * 100 : 0;
-    const pctSecondary = totalBothAzimuts > 0 ? (totalSecondary / totalBothAzimuts) * 100 : 0;
-    cards.push(
-      statCard(`% production azimut ${currentPrimaryAzimuth}°`, `${pctPrimary.toFixed(1)} %`),
-      statCard(`% production azimut ${currentSecondaryAzimuth}°`, `${pctSecondary.toFixed(1)} %`)
-    );
-
-    statsEl.innerHTML = cards.join('');
-    return;
-  }
-
-  // Fallback when only primary is available
-  const total = dailyData.reduce((acc, row) => acc + row.kwh, 0);
-  const avg = total / dailyData.length;
-
-  const sortedByKwh = [...dailyData].sort((a, b) => a.kwh - b.kwh);
-  const min = sortedByKwh[0];
-  const max = sortedByKwh[sortedByKwh.length - 1];
-
-  const cards = [
-    statCard('Total annuel', `${total.toFixed(1)} kWh`),
-    statCard('Moyenne/jour', `${avg.toFixed(2)} kWh`),
-    statCard('Jour le plus faible', `${min.day} · ${min.kwh.toFixed(2)} kWh`),
-    statCard('Jour le plus productif', `${max.day} · ${max.kwh.toFixed(2)} kWh`),
-  ];
-
-  statsEl.innerHTML = cards.join('');
-}
-
-function statCard(title, value) {
-  return `<div class="stat-item"><strong>${title}</strong><span>${value}</span></div>`;
-}
-
-function setStatus(message, isError = false) {
-  statusEl.textContent = message;
-  statusEl.style.color = isError ? '#b91c1c' : '#111827';
-}
-
-function toggleLoading(isLoading) {
-  estimateBtn.disabled = isLoading;
-  estimateBtn.textContent = isLoading ? 'Calcul...' : 'Estimer la production';
-}
-
-function hideResults() {
-  try {
-    const resultsArea = document.getElementById('resultsArea');
-    if (resultsArea) resultsArea.classList.add('hidden');
-    statsEl.classList.add('hidden');
-    const mcont = monthlyProfileChartCanvas && monthlyProfileChartCanvas.closest('.chart-container');
-    const dcont = dailyProfileChartCanvas && dailyProfileChartCanvas.closest('.chart-container');
-    if (mcont) mcont.classList.add('hidden');
-    if (dcont) dcont.classList.add('hidden');
-    const mrow = document.querySelector('.month-row');
-    const srow = document.querySelector('.slider-row');
-    const darrow = document.querySelector('.day-arrow-row');
-    if (mrow) mrow.classList.add('hidden');
-    if (srow) srow.classList.add('hidden');
-    if (darrow) darrow.classList.add('hidden');
-    const exportArea = document.getElementById('exportArea');
-    if (exportArea) exportArea.classList.add('hidden');
-  } catch {}
-}
-
-function showResults() {
-  try {
-    const resultsArea = document.getElementById('resultsArea');
-    if (resultsArea) resultsArea.classList.remove('hidden');
-    statsEl.classList.remove('hidden');
-    const mcont = monthlyProfileChartCanvas && monthlyProfileChartCanvas.closest('.chart-container');
-    const dcont = dailyProfileChartCanvas && dailyProfileChartCanvas.closest('.chart-container');
-    if (mcont) mcont.classList.remove('hidden');
-    if (dcont) dcont.classList.remove('hidden');
-    const mrow = document.querySelector('.month-row');
-    const srow = document.querySelector('.slider-row');
-    const darrow = document.querySelector('.day-arrow-row');
-    if (mrow) mrow.classList.remove('hidden');
-    if (srow) srow.classList.remove('hidden');
-    if (darrow) darrow.classList.remove('hidden');
-    const exportArea = document.getElementById('exportArea');
-    if (exportArea) exportArea.classList.remove('hidden');
-  } catch {}
-}
-
 function formatDayLabel(dayKey) {
   const [year, month, day] = dayKey.split('-').map(Number);
-  if (!year || !month || !day) {
-    return dayKey;
-  }
-
+  if (!year || !month || !day) return dayKey;
   const date = new Date(Date.UTC(year, month - 1, day));
-  return date.toLocaleDateString('fr-FR', {
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
+  return date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' });
 }
 
+// ─── Map ───────────────────────────────────────────────────
 function initMap() {
   if (typeof L === 'undefined') {
-    mapHintEl.textContent = 'Carte non disponible (Leaflet non chargé).';
+    if (mapHintEl) mapHintEl.textContent = 'Carte non disponible (Leaflet non chargé).';
     return;
   }
 
@@ -1175,26 +767,18 @@ function initMap() {
   }).addTo(map);
 
   map.on('click', (event) => {
-    if (suppressMapClick) {
-      // ignore this click because it was generated by a handle drag release
-      suppressMapClick = false;
-      return;
-    }
+    if (suppressMapClick) { suppressMapClick = false; return; }
+
     const { lat, lng } = event.latlng;
-    // Correction: Leaflet gère le shift pour zoom/crop, donc on utilise ctrl+clic pour la rotation azimut
     const isCtrlClick = Boolean(event.originalEvent?.ctrlKey);
+
     if (isCtrlClick && marker) {
-      const markerLatLng = marker.getLatLng();
-      const bearing = bearingBetweenPoints(
-        markerLatLng.lat,
-        markerLatLng.lng,
-        lat,
-        lng
-      );
+      const ml = marker.getLatLng();
+      const bearing = bearingBetweenPoints(ml.lat, ml.lng, lat, lng);
       azimuthInput.value = String(azimuthNorthClockwiseToAzimuthSouth(bearing));
       setAutoOppositeAzimuth();
       updateAzimuthArrowFromInputs();
-      mapHintEl.textContent = `Azimut ajusté depuis la carte (${azimuthInput.value}°). (Ctrl+clic)`;
+      if (mapHintEl) mapHintEl.textContent = `Azimut ajusté depuis la carte (${azimuthInput.value}°)`;
       return;
     }
 
@@ -1202,7 +786,7 @@ function initMap() {
     lonInput.value = lng.toFixed(5);
     placeOrMoveMarker(lat, lng);
     updateAzimuthArrowFromInputs();
-    mapHintEl.textContent = `Point sélectionné : ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    if (mapHintEl) mapHintEl.textContent = `Point sélectionné : ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
   });
 
   if (!Number.isNaN(Number(latInput.value)) && !Number.isNaN(Number(lonInput.value))) {
@@ -1211,133 +795,68 @@ function initMap() {
 }
 
 function placeOrMoveMarker(lat, lon) {
-  if (!map) {
-    return;
-  }
-
-  if (!marker) {
-    marker = L.marker([lat, lon]).addTo(map);
-  } else {
-    marker.setLatLng([lat, lon]);
-  }
+  if (!map) return;
+  if (!marker) marker = L.marker([lat, lon]).addTo(map);
+  else marker.setLatLng([lat, lon]);
 }
 
 function updateMapFromInputs(centerMap = false) {
-  if (!map) {
-    return;
-  }
-
+  if (!map) return;
   const lat = Number(latInput.value);
   const lon = Number(lonInput.value);
-
-  if (Number.isNaN(lat) || Number.isNaN(lon)) {
-    return;
-  }
+  if (Number.isNaN(lat) || Number.isNaN(lon)) return;
 
   placeOrMoveMarker(lat, lon);
   updateAzimuthArrowFromInputs();
-  mapHintEl.textContent = `Point sélectionné : ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-
-  if (centerMap) {
-    map.setView([lat, lon], 10);
-  }
+  if (mapHintEl) mapHintEl.textContent = `Point sélectionné : ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+  if (centerMap) map.setView([lat, lon], 10);
 }
 
 function updateAzimuthArrowFromInputs() {
-  if (!map) {
-    return;
-  }
-
+  if (!map) return;
   const lat = Number(latInput.value);
   const lon = Number(lonInput.value);
-  const azimuthSouth = Number(azimuthInput.value);
-  const azimuthSouth2 = Number(azimuth2Input.value);
+  const azS = Number(azimuthInput.value);
+  const azS2 = Number(azimuth2Input.value);
   const compareEnabled = compareAzimuthCheckbox.checked && !azimuth2Input.disabled;
 
-  if (Number.isNaN(lat) || Number.isNaN(lon) || Number.isNaN(azimuthSouth)) {
-    clearAzimuthArrow();
-    return;
-  }
+  if (Number.isNaN(lat) || Number.isNaN(lon) || Number.isNaN(azS)) { clearAzimuthArrow(); return; }
 
-  const primaryLayers = updateArrowLayer(
-    lat,
-    lon,
-    azimuthSouth,
-    '#ef4444',
-    azimuthShaft,
-    azimuthHead,
-    azimuthHandle
-  );
-  azimuthShaft = primaryLayers.shaft;
-  azimuthHead = primaryLayers.head;
-  azimuthHandle = primaryLayers.handle;
+  const prim = updateArrowLayer(lat, lon, azS, CHART_COLORS.primary, azimuthShaft, azimuthHead, azimuthHandle);
+  azimuthShaft = prim.shaft;
+  azimuthHead = prim.head;
+  azimuthHandle = prim.handle;
 
-  if (compareEnabled && !Number.isNaN(azimuthSouth2)) {
-    const secondaryLayers = updateArrowLayer(
-      lat,
-      lon,
-      azimuthSouth2,
-      '#2563eb',
-      azimuthSecondaryShaft,
-      azimuthSecondaryHead,
-      azimuthSecondaryHandle
-    );
-    azimuthSecondaryShaft = secondaryLayers.shaft;
-    azimuthSecondaryHead = secondaryLayers.head;
-    azimuthSecondaryHandle = secondaryLayers.handle;
+  if (compareEnabled && !Number.isNaN(azS2)) {
+    const sec = updateArrowLayer(lat, lon, azS2, CHART_COLORS.secondary, azimuthSecondaryShaft, azimuthSecondaryHead, azimuthSecondaryHandle);
+    azimuthSecondaryShaft = sec.shaft;
+    azimuthSecondaryHead = sec.head;
+    azimuthSecondaryHandle = sec.handle;
   } else {
     clearSecondaryAzimuthArrow();
   }
 }
 
 function clearAzimuthArrow() {
-  if (azimuthShaft) {
-    map.removeLayer(azimuthShaft);
-    azimuthShaft = null;
-  }
-
-  if (azimuthHead) {
-    map.removeLayer(azimuthHead);
-    azimuthHead = null;
-  }
-
-  if (azimuthHandle) {
-    map.removeLayer(azimuthHandle);
-    azimuthHandle = null;
-  }
-
+  [azimuthShaft, azimuthHead, azimuthHandle].forEach((l) => { if (l) map.removeLayer(l); });
+  azimuthShaft = azimuthHead = azimuthHandle = null;
   clearSecondaryAzimuthArrow();
 }
 
 function clearSecondaryAzimuthArrow() {
-  if (azimuthSecondaryShaft) {
-    map.removeLayer(azimuthSecondaryShaft);
-    azimuthSecondaryShaft = null;
-  }
-
-  if (azimuthSecondaryHead) {
-    map.removeLayer(azimuthSecondaryHead);
-    azimuthSecondaryHead = null;
-  }
-  if (azimuthSecondaryHandle) {
-    map.removeLayer(azimuthSecondaryHandle);
-    azimuthSecondaryHandle = null;
-  }
+  [azimuthSecondaryShaft, azimuthSecondaryHead, azimuthSecondaryHandle].forEach((l) => { if (l) map.removeLayer(l); });
+  azimuthSecondaryShaft = azimuthSecondaryHead = azimuthSecondaryHandle = null;
 }
 
 function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer, handleMarker) {
-  // Calculs géométriques d'abord (évite l'utilisation de variables non initialisées)
   const bearing = azimuthSouthToAzimuthNorthClockwise(azimuthSouth);
-  // Arrow scale: 0.5 = half size
-  const arrowScale = 0.5;
-  const tip = destinationPoint(lat, lon, bearing, 220 * arrowScale);
-  const leftHead = destinationPoint(tip.lat, tip.lon, bearing + 150, 70 * arrowScale);
-  const rightHead = destinationPoint(tip.lat, tip.lon, bearing - 150, 70 * arrowScale);
+  const scale = 0.5;
+  const tip = destinationPoint(lat, lon, bearing, 220 * scale);
+  const leftHead = destinationPoint(tip.lat, tip.lon, bearing + 150, 70 * scale);
+  const rightHead = destinationPoint(tip.lat, tip.lon, bearing - 150, 70 * scale);
 
-  // Crée le handle une seule fois et le réutilise
   let handleCreated = false;
   if (!handleMarker) {
-    // create a DivIcon so we have a small visible dot and a larger clickable area
     const icon = L.divIcon({
       className: 'az-handle-icon',
       html: '<span class="az-handle-dot"></span>',
@@ -1350,111 +869,44 @@ function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer, 
     handleMarker.setLatLng([tip.lat, tip.lon]);
   }
 
-  const shaftLatLngs = [
-    [lat, lon],
-    [tip.lat, tip.lon],
-  ];
+  const shaftLL = [[lat, lon], [tip.lat, tip.lon]];
+  const headLL = [[leftHead.lat, leftHead.lon], [tip.lat, tip.lon], [rightHead.lat, rightHead.lon]];
 
-  const headLatLngs = [
-    [leftHead.lat, leftHead.lon],
-    [tip.lat, tip.lon],
-    [rightHead.lat, rightHead.lon],
-  ];
+  if (!shaftLayer) shaftLayer = L.polyline(shaftLL, { color, weight: 3, opacity: .95 }).addTo(map);
+  else shaftLayer.setLatLngs(shaftLL);
 
-  // Flèche
-  if (!shaftLayer) {
-    shaftLayer = L.polyline(shaftLatLngs, {
-      color,
-      weight: 3,
-      opacity: 0.95,
-    }).addTo(map);
-  } else {
-    shaftLayer.setLatLngs(shaftLatLngs);
-  }
+  if (!headLayer) headLayer = L.polyline(headLL, { color, weight: 3, opacity: .95 }).addTo(map);
+  else headLayer.setLatLngs(headLL);
 
-  // Tête
-  if (!headLayer) {
-    headLayer = L.polyline(headLatLngs, {
-      color,
-      weight: 3,
-      opacity: 0.95,
-    }).addTo(map);
-  } else {
-    headLayer.setLatLngs(headLatLngs);
-  }
-
-  // Handle interactif (éviter de rattacher plusieurs fois les handlers)
   if (handleCreated) {
     const el = handleMarker.getElement && handleMarker.getElement();
     if (el) {
       L.DomEvent.on(el, 'pointerdown', function (e) {
         if (!map) return;
-        // Stopper la propagation et le comportement par défaut
-        try {
-          L.DomEvent.stopPropagation(e);
-          L.DomEvent.preventDefault(e);
-        } catch {}
-
-        // Indiquer qu'on doit ignorer le prochain clic map (provoqué par le relâchement)
+        try { L.DomEvent.stopPropagation(e); L.DomEvent.preventDefault(e); } catch { /* ignore */ }
         suppressMapClick = true;
-        // Désactiver temporairement les interactions de la carte
-        try {
-          map.dragging.disable();
-          if (map.doubleClickZoom) map.doubleClickZoom.disable();
-          if (map.boxZoom) map.boxZoom.disable();
-        } catch {}
-
-        const markerLatLng = marker.getLatLng();
+        try { map.dragging.disable(); map.doubleClickZoom?.disable(); map.boxZoom?.disable(); } catch { /* ignore */ }
+        const markerLL = marker.getLatLng();
 
         function onPointerMove(ev) {
-          try {
-            L.DomEvent.stopPropagation(ev);
-            L.DomEvent.preventDefault(ev);
-          } catch {}
-
-          const latlng = map.mouseEventToLatLng(ev);
-          const bearing = bearingBetweenPoints(
-            markerLatLng.lat,
-            markerLatLng.lng,
-            latlng.lat,
-            latlng.lng
-          );
-          azimuthInput.value = String(azimuthNorthClockwiseToAzimuthSouth(bearing));
+          try { L.DomEvent.stopPropagation(ev); L.DomEvent.preventDefault(ev); } catch { /* ignore */ }
+          const ll = map.mouseEventToLatLng(ev);
+          const b = bearingBetweenPoints(markerLL.lat, markerLL.lng, ll.lat, ll.lng);
+          azimuthInput.value = String(azimuthNorthClockwiseToAzimuthSouth(b));
           setAutoOppositeAzimuth();
           updateAzimuthArrowFromInputs();
-          handleMarker.setLatLng([latlng.lat, latlng.lng]);
-          mapHintEl.textContent = `Azimut en cours : ${azimuthInput.value}°`;
+          handleMarker.setLatLng([ll.lat, ll.lng]);
+          if (mapHintEl) mapHintEl.textContent = `Azimut en cours : ${azimuthInput.value}°`;
         }
 
         function onPointerUp(ev) {
-          try {
-            L.DomEvent.stopPropagation(ev);
-            L.DomEvent.preventDefault(ev);
-          } catch {}
-
-          // Réactiver les interactions après un petit délai pour éviter que Leaflet n'interprète le relâchement comme un drag
-          setTimeout(() => {
-            try {
-              map.dragging.enable();
-              if (map.doubleClickZoom) map.doubleClickZoom.enable();
-              if (map.boxZoom) map.boxZoom.enable();
-            } catch {}
-          }, 50);
-
-          // Snap handle exactly to arrow tip
-          try {
-            handleMarker.setLatLng([tip.lat, tip.lon]);
-            updateAzimuthArrowFromInputs();
-          } catch {}
-
-          // Toujours supprimer le clic carte généré; laisser une petite fenêtre
-          setTimeout(() => {
-            suppressMapClick = false;
-          }, 300);
-
+          try { L.DomEvent.stopPropagation(ev); L.DomEvent.preventDefault(ev); } catch { /* ignore */ }
+          setTimeout(() => { try { map.dragging.enable(); map.doubleClickZoom?.enable(); map.boxZoom?.enable(); } catch { /* ignore */ } }, 50);
+          try { handleMarker.setLatLng([tip.lat, tip.lon]); updateAzimuthArrowFromInputs(); } catch { /* ignore */ }
+          setTimeout(() => { suppressMapClick = false; }, 300);
           window.removeEventListener('pointermove', onPointerMove);
           window.removeEventListener('pointerup', onPointerUp);
-          mapHintEl.textContent = `Azimut ajusté : ${azimuthInput.value}°`;
+          if (mapHintEl) mapHintEl.textContent = `Azimut ajusté : ${azimuthInput.value}°`;
         }
 
         window.addEventListener('pointermove', onPointerMove);
@@ -1466,45 +918,350 @@ function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer, 
   return { shaft: shaftLayer, head: headLayer, handle: handleMarker };
 }
 
+// ─── Geo Utils ─────────────────────────────────────────────
 function bearingBetweenPoints(lat1, lon1, lat2, lon2) {
-  const lat1Rad = (lat1 * Math.PI) / 180;
-  const lat2Rad = (lat2 * Math.PI) / 180;
-  const deltaLonRad = ((lon2 - lon1) * Math.PI) / 180;
-
-  const y = Math.sin(deltaLonRad) * Math.cos(lat2Rad);
-  const x =
-    Math.cos(lat1Rad) * Math.sin(lat2Rad) -
-    Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(deltaLonRad);
-
-  const bearing = (Math.atan2(y, x) * 180) / Math.PI;
-  return (bearing + 360) % 360;
+  const r = Math.PI / 180;
+  const dLon = (lon2 - lon1) * r;
+  const y = Math.sin(dLon) * Math.cos(lat2 * r);
+  const x = Math.cos(lat1 * r) * Math.sin(lat2 * r) - Math.sin(lat1 * r) * Math.cos(lat2 * r) * Math.cos(dLon);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 }
 
 function destinationPoint(lat, lon, bearingDeg, distanceMeters) {
-  const earthRadius = 6371000;
-  const bearingRad = (bearingDeg * Math.PI) / 180;
-  const latRad = (lat * Math.PI) / 180;
-  const lonRad = (lon * Math.PI) / 180;
-  const angularDistance = distanceMeters / earthRadius;
-
-  const destLatRad = Math.asin(
-    Math.sin(latRad) * Math.cos(angularDistance) +
-      Math.cos(latRad) * Math.sin(angularDistance) * Math.cos(bearingRad)
-  );
-
-  const destLonRad =
-    lonRad +
-    Math.atan2(
-      Math.sin(bearingRad) * Math.sin(angularDistance) * Math.cos(latRad),
-      Math.cos(angularDistance) - Math.sin(latRad) * Math.sin(destLatRad)
-    );
-
-  return {
-    lat: (destLatRad * 180) / Math.PI,
-    lon: (destLonRad * 180) / Math.PI,
-  };
+  const R = 6371000;
+  const r = Math.PI / 180;
+  const br = bearingDeg * r;
+  const latR = lat * r;
+  const lonR = lon * r;
+  const d = distanceMeters / R;
+  const destLat = Math.asin(Math.sin(latR) * Math.cos(d) + Math.cos(latR) * Math.sin(d) * Math.cos(br));
+  const destLon = lonR + Math.atan2(Math.sin(br) * Math.sin(d) * Math.cos(latR), Math.cos(d) - Math.sin(latR) * Math.sin(destLat));
+  return { lat: destLat / r, lon: destLon / r };
 }
 
+// ─── PDF Export (Professional Design) ──────────────────────
+async function exportToPDF() {
+  try {
+    const MONTHS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+    const primaryMonthly = computeMonthlyTotalsFromDaily(currentPrimaryDailyData);
+    const secondaryMonthly = currentSecondaryDailyData.length
+      ? computeMonthlyTotalsFromDaily(currentSecondaryDailyData)
+      : null;
+    const hasSecondary = Boolean(secondaryMonthly);
+
+    // ─── Render bar chart to image ───
+    const barCanvas = document.createElement('canvas');
+    barCanvas.width = 1600;
+    barCanvas.height = 700;
+    barCanvas.style.display = 'none';
+    document.body.appendChild(barCanvas);
+
+    const barDatasets = [
+      { label: `Azimut ${currentPrimaryAzimuth}°`, data: primaryMonthly, backgroundColor: '#f87171', borderColor: '#ef4444', borderWidth: 1, borderRadius: 4 },
+    ];
+    if (hasSecondary) {
+      barDatasets.push(
+        { label: `Azimut ${currentSecondaryAzimuth}°`, data: secondaryMonthly, backgroundColor: '#60a5fa', borderColor: '#2563eb', borderWidth: 1, borderRadius: 4 }
+      );
+    }
+
+    const barChart = new Chart(barCanvas.getContext('2d'), {
+      type: 'bar',
+      data: { labels: MONTHS, datasets: barDatasets },
+      options: {
+        responsive: false,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, position: 'top', labels: { font: { size: 14 }, padding: 16 } },
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 13 } } },
+          y: { title: { display: true, text: 'kWh', font: { size: 13 } }, grid: { color: 'rgba(0,0,0,.06)' }, ticks: { font: { size: 12 } } },
+        },
+      },
+    });
+
+    await new Promise((r) => setTimeout(r, 350));
+    const barImg = barCanvas.toDataURL('image/png', 1.0);
+    barChart.destroy();
+    document.body.removeChild(barCanvas);
+
+    // ─── Render hourly profile charts ───
+    const chartImages = [];
+    for (let m = 1; m <= 12; m++) {
+      const pm = buildMonthlyAverageProfile(currentPrimaryHourlyEntries, m);
+      const sm = hasSecondary && currentSecondaryHourlyEntries.length
+        ? buildMonthlyAverageProfile(currentSecondaryHourlyEntries, m)
+        : null;
+
+      const c = document.createElement('canvas');
+      c.width = 1200;
+      c.height = 600;
+      c.style.display = 'none';
+      document.body.appendChild(c);
+
+      const ds = [
+        { label: `Az ${currentPrimaryAzimuth}°`, data: pm, borderColor: '#ef4444', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2 },
+      ];
+      if (sm) {
+        ds.push({ label: `Az ${currentSecondaryAzimuth}°`, data: sm, borderColor: '#2563eb', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2 });
+      }
+
+      const ch = new Chart(c.getContext('2d'), {
+        type: 'line',
+        data: { labels: Array.from({ length: 24 }, (_, h) => `${h}h`), datasets: ds },
+        options: {
+          responsive: false,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+            y: { title: { display: true, text: 'kWh', font: { size: 11 } }, grid: { color: 'rgba(0,0,0,.04)' }, ticks: { font: { size: 10 } } },
+          },
+        },
+      });
+
+      await new Promise((r) => setTimeout(r, 200));
+      chartImages.push({ month: m, src: c.toDataURL('image/png', 1.0) });
+      ch.destroy();
+      document.body.removeChild(c);
+    }
+
+    // ─── Build PDF ───
+    const jsPDFGlobal = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF || (window.jspdf || null);
+    if (!jsPDFGlobal) throw new Error('jsPDF introuvable.');
+    const DocC = typeof jsPDFGlobal === 'function' ? jsPDFGlobal : jsPDFGlobal.jsPDF || jsPDFGlobal;
+    const doc = new DocC({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const W = doc.internal.pageSize.getWidth();
+    const H = doc.internal.pageSize.getHeight();
+    const M = 14;
+    let y;
+
+    const totalPrimary = primaryMonthly.reduce((a, b) => a + b, 0);
+    const totalSecondary = hasSecondary ? secondaryMonthly.reduce((a, b) => a + b, 0) : 0;
+    const totalCombined = totalPrimary + totalSecondary;
+
+    // ─────── Page 1: Overview ───────
+    // Header gradient
+    doc.setFillColor(15, 23, 42);
+    doc.rect(0, 0, W, 32, 'F');
+    // Amber accent line
+    doc.setFillColor(245, 158, 11);
+    doc.rect(0, 32, W, 2, 'F');
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(22);
+    doc.text('SolarCurve', M, 16);
+    doc.setFontSize(11);
+    doc.setTextColor(148, 163, 184);
+    doc.text('Rapport d\'estimation de production photovoltaïque', M, 24);
+    doc.setFontSize(9);
+    doc.setTextColor(200, 200, 200);
+    doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`, W - M, 24, { align: 'right' });
+
+    y = 42;
+
+    // Parameters card
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    const paramCardH = 20;
+    doc.roundedRect(M, y, W - M * 2, paramCardH, 3, 3, 'FD');
+    doc.setTextColor(30, 41, 59);
+    doc.setFontSize(9);
+
+    const paramCols = [];
+    paramCols.push(`Position : ${latInput.value || '-'}, ${lonInput.value || '-'}`);
+    paramCols.push(`Puissance : ${document.getElementById('peakPower').value} Wc`);
+    paramCols.push(`Inclinaison : ${document.getElementById('tilt').value}°`);
+    paramCols.push(`Azimut 1 : ${currentPrimaryAzimuth ?? azimuthInput.value}°`);
+    if (hasSecondary) paramCols.push(`Azimut 2 : ${currentSecondaryAzimuth}°`);
+    paramCols.push(`Pertes : ${document.getElementById('losses').value}%`);
+
+    const paramText = paramCols.join('   ·   ');
+    doc.text(paramText, M + 6, y + 12);
+    y += paramCardH + 6;
+
+    // Bar chart
+    const imgW = W - M * 2;
+    let imgH = imgW * (700 / 1600);
+    const maxImgH = H - y - 50 - M;
+    if (imgH > maxImgH) imgH = Math.max(40, maxImgH);
+    doc.addImage(barImg, 'PNG', M, y, imgW, imgH);
+    y += imgH + 6;
+
+    // Annual summary boxes
+    const boxW = hasSecondary ? (W - M * 2 - 8) / 3 : (W - M * 2);
+    const boxH = 14;
+    const boxColors = [[239, 68, 68], [37, 99, 235], [5, 150, 105]];
+    const summaryItems = [];
+    summaryItems.push({ label: `Total az. ${currentPrimaryAzimuth}°`, value: `${totalPrimary.toFixed(1)} kWh`, color: boxColors[0] });
+    if (hasSecondary) {
+      summaryItems.push({ label: `Total az. ${currentSecondaryAzimuth}°`, value: `${totalSecondary.toFixed(1)} kWh`, color: boxColors[1] });
+      summaryItems.push({ label: 'Total combiné', value: `${totalCombined.toFixed(1)} kWh`, color: boxColors[2] });
+    }
+
+    for (let i = 0; i < summaryItems.length; i++) {
+      const bx = M + i * (boxW + 4);
+      const item = summaryItems[i];
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(bx, y, boxW, boxH, 2, 2, 'FD');
+      // Color accent top
+      doc.setFillColor(item.color[0], item.color[1], item.color[2]);
+      doc.rect(bx, y, boxW, 1.8, 'F');
+      // Text
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(item.label.toUpperCase(), bx + 4, y + 6);
+      doc.setFontSize(12);
+      doc.setTextColor(15, 23, 42);
+      doc.text(item.value, bx + 4, y + 12);
+    }
+
+    if (hasSecondary) {
+      y += boxH + 2;
+      const pct1 = totalCombined > 0 ? (totalPrimary / totalCombined * 100) : 0;
+      const pct2 = totalCombined > 0 ? (totalSecondary / totalCombined * 100) : 0;
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`Répartition : ${pct1.toFixed(1)}% (az. ${currentPrimaryAzimuth}°) / ${pct2.toFixed(1)}% (az. ${currentSecondaryAzimuth}°)`, M, y + 4);
+    }
+
+    // Footer page 1
+    pdfFooter(doc, W, H, M, 1);
+
+    // ─────── Page 2: Monthly Table ───────
+    doc.addPage();
+    pdfPageHeader(doc, W, M, 'Détail mensuel de la production');
+    y = 38;
+
+    const colCount = hasSecondary ? 4 : 2;
+    const tableW = W - M * 2;
+    const colW = tableW / colCount;
+    const rowH = 9;
+    const headerH = 10;
+
+    // Table header
+    doc.setFillColor(15, 23, 42);
+    const headers = ['Mois', `Production (${currentPrimaryAzimuth}°) kWh`];
+    if (hasSecondary) headers.push(`Production (${currentSecondaryAzimuth}°) kWh`, 'Total kWh');
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(9);
+    for (let i = 0; i < headers.length; i++) {
+      doc.rect(M + i * colW, y, colW, headerH, 'F');
+      doc.text(headers[i], M + i * colW + 4, y + 7);
+    }
+    y += headerH;
+
+    // Table rows
+    let totalRowPrimary = 0, totalRowSecondary = 0;
+
+    for (let i = 0; i < 12; i++) {
+      const isEven = i % 2 === 0;
+      if (isEven) { doc.setFillColor(248, 250, 252); } else { doc.setFillColor(255, 255, 255); }
+      doc.setDrawColor(226, 232, 240);
+
+      const a1 = primaryMonthly[i] || 0;
+      const a2 = hasSecondary ? (secondaryMonthly[i] || 0) : 0;
+      totalRowPrimary += a1;
+      totalRowSecondary += a2;
+
+      for (let c = 0; c < colCount; c++) {
+        doc.rect(M + c * colW, y, colW, rowH, 'FD');
+      }
+
+      doc.setTextColor(30, 41, 59);
+      doc.setFontSize(9);
+      doc.text(MONTHS[i], M + 4, y + 6.5);
+      doc.text(a1.toFixed(1), M + colW + colW - 6, y + 6.5, { align: 'right' });
+
+      if (hasSecondary) {
+        doc.text(a2.toFixed(1), M + 2 * colW + colW - 6, y + 6.5, { align: 'right' });
+        doc.text((a1 + a2).toFixed(1), M + 3 * colW + colW - 6, y + 6.5, { align: 'right' });
+      }
+
+      y += rowH;
+    }
+
+    // Total row
+    doc.setFillColor(245, 158, 11);
+    for (let c = 0; c < colCount; c++) {
+      doc.rect(M + c * colW, y, colW, headerH, 'F');
+    }
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(10);
+    doc.text('TOTAL ANNUEL', M + 4, y + 7);
+    doc.text(totalRowPrimary.toFixed(1), M + colW + colW - 6, y + 7, { align: 'right' });
+    if (hasSecondary) {
+      doc.text(totalRowSecondary.toFixed(1), M + 2 * colW + colW - 6, y + 7, { align: 'right' });
+      doc.text((totalRowPrimary + totalRowSecondary).toFixed(1), M + 3 * colW + colW - 6, y + 7, { align: 'right' });
+    }
+
+    pdfFooter(doc, W, H, M, 2);
+
+    // ─────── Page 3: Hourly Profile Charts ───────
+    doc.addPage();
+    pdfPageHeader(doc, W, M, 'Profils horaires mensuels moyens');
+
+    const chartCols = 3;
+    const chartRows = 4;
+    const gap = 6;
+    const topY = 40;
+    const avW = (W - M * 2 - gap * (chartCols - 1)) / chartCols;
+    const avH = (H - topY - M - 16 - gap * (chartRows - 1)) / chartRows;
+
+    for (let idx = 0; idx < chartImages.length; idx++) {
+      const col = idx % chartCols;
+      const row = Math.floor(idx / chartCols);
+      const cx = M + col * (avW + gap);
+      const cy = topY + row * (avH + gap);
+
+      // Month label background
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(cx, cy, avW, avH, 2, 2, 'FD');
+
+      // Month name
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      const mName = MONTHS[chartImages[idx].month - 1];
+      doc.text(mName, cx + 3, cy + 5);
+
+      // Chart image
+      doc.addImage(chartImages[idx].src, 'PNG', cx + 1, cy + 7, avW - 2, avH - 9);
+    }
+
+    pdfFooter(doc, W, H, M, 3);
+
+    // Save
+    doc.save(`SolarCurve_rapport_${new Date().toISOString().slice(0, 10)}.pdf`);
+
+  } catch (err) {
+    console.error('Export PDF failed', err);
+    alert('Erreur lors de la génération du PDF. Consultez la console.');
+  }
+}
+
+function pdfPageHeader(doc, W, M, title) {
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, W, 28, 'F');
+  doc.setFillColor(245, 158, 11);
+  doc.rect(0, 28, W, 1.5, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(16);
+  doc.text(title, M, 18);
+}
+
+function pdfFooter(doc, W, H, M, pageNum) {
+  doc.setFontSize(8);
+  doc.setTextColor(148, 163, 184);
+  doc.text('SolarCurve — Données fournies à titre indicatif', M, H - 6);
+  doc.text(`Page ${pageNum}`, W - M, H - 6, { align: 'right' });
+}
+
+// ─── Init ──────────────────────────────────────────────────
 azimuth2Input.dataset.auto = 'true';
 setAutoOppositeAzimuth(true);
 initMap();
