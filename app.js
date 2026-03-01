@@ -311,7 +311,9 @@ async function fetchFromPVGIS({ lat, lon, peakPower, tilt, azimuth, losses }) {
   const dailyData = aggregateDailyData(hourlyEntries);
   // Divide by 2 to get average from 2 years of data
   const dailyDataAveraged = dailyData.map(d => ({ ...d, kwh: Number((d.kwh / 2).toFixed(3)) }));
-  return { hourlyEntries, dailyData: dailyDataAveraged };
+  // Also divide hourly entries by 2 for consistency
+  const hourlyEntriesAveraged = hourlyEntries.map(e => ({ ...e, kwh: Number((e.kwh / 2).toFixed(3)) }));
+  return { hourlyEntries: hourlyEntriesAveraged, dailyData: dailyDataAveraged };
 }
 
 async function fetchFromPVWatts({ lat, lon, peakPower, tilt, azimuth, losses, pvwattsKey }) {
@@ -363,7 +365,9 @@ async function fetchFromPVWatts({ lat, lon, peakPower, tilt, azimuth, losses, pv
   const dailyData = aggregateDailyData(hourlyEntries);
   // Divide by 2 to get average from 2 years of data
   const dailyDataAveraged = dailyData.map(d => ({ ...d, kwh: Number((d.kwh / 2).toFixed(3)) }));
-  return { hourlyEntries, dailyData: dailyDataAveraged };
+  // Also divide hourly entries by 2 for consistency
+  const hourlyEntriesAveraged = hourlyEntries.map(e => ({ ...e, kwh: Number((e.kwh / 2).toFixed(3)) }));
+  return { hourlyEntries: hourlyEntriesAveraged, dailyData: dailyDataAveraged };
 }
 
 async function fetchJSONFromAPI(apiUrl, sourceName) {
