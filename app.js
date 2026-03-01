@@ -908,7 +908,7 @@ function initMap() {
   const defaultLat = Number(latInput.value) || 46.5;
   const defaultLon = Number(lonInput.value) || 2.5;
 
-  map = L.map('map').setView([defaultLat, defaultLon], 12);
+  map = L.map('map').setView([defaultLat, defaultLon], 6);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
