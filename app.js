@@ -989,9 +989,9 @@ function clearSecondaryAzimuthArrow() {
 
 function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer, handleMarker) {
   const bearing = azimuthSouthToAzimuthNorthClockwise(azimuthSouth);
-  const scale = 0.85;
-  const shaftDist = 250;
-  const headDist = 95;
+  const scale = 0.6;
+  const shaftDist = 150;
+  const headDist = 55;
   const headAngle = 165;
   const tip = destinationPoint(lat, lon, bearing, shaftDist * scale);
   const leftHead = destinationPoint(tip.lat, tip.lon, bearing + headAngle, headDist * scale);
@@ -1233,11 +1233,17 @@ async function exportToPDF() {
           // Force Leaflet to invalidate and redraw all layers including arrows
           map.invalidateSize();
           
-          // Wait for tiles and rendering
-          await new Promise((r) => setTimeout(r, 800));
+          // Wait for tiles and rendering (increased wait time)
+          await new Promise((r) => setTimeout(r, 1200));
           
-          // Capture map
-          const mapCanvas = await html2canvas(mapEl, { scale: 2, useCORS: true, allowTaint: true });
+          // Capture map with higher quality settings
+          const mapCanvas = await html2canvas(mapEl, { 
+            scale: 2, 
+            useCORS: true, 
+            allowTaint: true,
+            backgroundColor: null,
+            logging: false 
+          });
           mapImg = mapCanvas.toDataURL('image/png', 1.0);
           
           // Restore original state
