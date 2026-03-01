@@ -1122,13 +1122,33 @@ async function exportToPDF() {
     barChart.destroy();
     document.body.removeChild(barCanvas);
 
-    // ─── Render 12 hourly profile chart images (with sum curve) ───
+    // ─── Render 12 hourly profile chart images (with sum curve and consumption) ───
     const chartImages = [];
+    const consumptionPowerW = Number(document.getElementById('consumptionPower').value);
+    const consumptionPowerKW = consumptionPowerW / 1000; // Convert W to kW
+    const DAYS_IN_MONTH = [31, 28.25, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
     for (let m = 1; m <= 12; m++) {
       const pm = buildMonthlyAverageProfile(currentPrimaryHourlyEntries, m);
       const sm = hasSecondary && currentSecondaryHourlyEntries.length
         ? buildMonthlyAverageProfile(currentSecondaryHourlyEntries, m)
         : null;
+
+      // Calculate consumption line and self-consumption
+      const consumptionLine = Array(24).fill(consumptionPowerKW);
+      let totalSelfConsumption = 0;
+      
+      if (consumptionPowerW > 0) {
+        // Calculate self-consumption (min of production and consumption) for each hour
+        for (let h = 0; h < 24; h++) {
+          const totalProd = pm[h] + (sm ? sm[h] : 0);
+          const selfConsumed = Math.min(totalProd, consumptionPowerKW);
+          totalSelfConsumption += selfConsumed;
+        }
+      }
+      
+      // Average self-consumption per day for this month
+      const avgSelfConsumptionPerDay = consumptionPowerW > 0 ? (totalSelfConsumption / DAYS_IN_MONTH[m - 1]) : 0;
 
       const c = document.createElement('canvas');
       c.width = 900;
@@ -1145,6 +1165,13 @@ async function exportToPDF() {
           { label: 'Somme', data: sumProfiles(pm, sm), borderColor: '#059669', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2.2 }
         );
       }
+      
+      // Add consumption line if enabled
+      if (consumptionPowerW > 0) {
+        ds.push(
+          { label: 'Talon conso', data: consumptionLine, borderColor: '#d97706', borderDash: [4, 4], fill: false, tension: 0, pointRadius: 0, borderWidth: 1.5 }
+        );
+      }
 
       const ch = new Chart(c.getContext('2d'), {
         type: 'line',
@@ -1152,7 +1179,7 @@ async function exportToPDF() {
         options: {
           responsive: false,
           maintainAspectRatio: false,
-          plugins: { legend: { display: hasSecondary, position: 'bottom', labels: { font: { size: 10 }, padding: 8, usePointStyle: true } } },
+          plugins: { legend: { display: true, position: 'bottom', labels: { font: { size: 10 }, padding: 8, usePointStyle: true } } },
           scales: {
             x: { grid: { display: false }, ticks: { font: { size: 9 } } },
             y: { title: { display: true, text: 'kWh', font: { size: 9 } }, grid: { color: 'rgba(0,0,0,.04)' }, ticks: { font: { size: 9 } } },
@@ -1161,7 +1188,11 @@ async function exportToPDF() {
       });
 
       await new Promise((r) => setTimeout(r, 200));
-      chartImages.push({ month: m, src: c.toDataURL('image/png', 1.0) });
+      chartImages.push({ 
+        month: m, 
+        src: c.toDataURL('image/png', 1.0),
+        avgSelfConsumption: avgSelfConsumptionPerDay
+      });
       ch.destroy();
       document.body.removeChild(c);
     }
@@ -1490,7 +1521,16 @@ async function exportToPDF() {
         // Chart image
         const imgPad = 2;
         const titleH = 8;
-        doc.addImage(chartImages[globalIdx].src, 'PNG', cx + imgPad, cy + titleH, cellW - imgPad * 2, cellH - titleH - 2);
+        const imgH = cellH - titleH - 16;
+        doc.addImage(chartImages[globalIdx].src, 'PNG', cx + imgPad, cy + titleH, cellW - imgPad * 2, imgH);
+
+        // Self-consumption stats below chart
+        if (chartImages[globalIdx].avgSelfConsumption > 0) {
+          const statsY = cy + cellH - 13;
+          doc.setFontSize(7);
+          doc.setTextColor(100, 116, 139);
+          doc.text(`Autoconsommation moy. : ${chartImages[globalIdx].avgSelfConsumption.toFixed(2)} kWh/j`, cx + 4, statsY);
+        }
       }
 
       pdfFooter(doc, W, H, M, pageNum);
