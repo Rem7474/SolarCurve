@@ -266,6 +266,8 @@ async function fetchFromPVGIS({ lat, lon, peakPower, tilt, azimuth, losses }) {
     loss: String(losses),
     outputformat: 'json',
     pvcalculation: '1',
+    startyear: '2019',
+    endyear: '2020',
   });
 
   const response = await fetchJSONFromAPI(`/api/pvgis?${params.toString()}`, 'PVGIS');
@@ -301,7 +303,10 @@ async function fetchFromPVGIS({ lat, lon, peakPower, tilt, azimuth, losses }) {
     );
   }
 
-  return { hourlyEntries, dailyData: aggregateDailyData(hourlyEntries) };
+  const dailyData = aggregateDailyData(hourlyEntries);
+  // Divide by 2 to get average from 2 years of data
+  const dailyDataAveraged = dailyData.map(d => ({ ...d, kwh: Number((d.kwh / 2).toFixed(3)) }));
+  return { hourlyEntries, dailyData: dailyDataAveraged };
 }
 
 async function fetchFromPVWatts({ lat, lon, peakPower, tilt, azimuth, losses, pvwattsKey }) {
@@ -327,13 +332,21 @@ async function fetchFromPVWatts({ lat, lon, peakPower, tilt, azimuth, losses, pv
   const ac = data?.outputs?.ac;
   if (!Array.isArray(ac) || ac.length === 0) throw new Error('Réponse PVWatts invalide.');
 
-  const year = 2020;
   const hourlyEntries = [];
-  for (let i = 0; i < ac.length; i += 1) {
+  // Distribute AC data across 2 years (2019 and 2020)
+  // 2019 = 365 days, 2020 = 366 days (leap) = 17544 hours total
+  const maxHours = Math.min(ac.length, 17544);
+  const year2019Hours = 8760; // 365 * 24
+  
+  for (let i = 0; i < maxHours; i += 1) {
     const powerW = Number(ac[i]);
     if (Number.isNaN(powerW)) continue;
+    
+    // Map to 2019 or 2020
+    const year = i < year2019Hours ? 2019 : 2020;
+    const hourInYear = i % year2019Hours;
     const date = new Date(Date.UTC(year, 0, 1, 0, 0, 0));
-    date.setUTCHours(i);
+    date.setUTCHours(hourInYear);
     hourlyEntries.push({
       dayKey: date.toISOString().slice(0, 10),
       month: date.getUTCMonth() + 1,
@@ -342,7 +355,10 @@ async function fetchFromPVWatts({ lat, lon, peakPower, tilt, azimuth, losses, pv
     });
   }
 
-  return { hourlyEntries, dailyData: aggregateDailyData(hourlyEntries) };
+  const dailyData = aggregateDailyData(hourlyEntries);
+  // Divide by 2 to get average from 2 years of data
+  const dailyDataAveraged = dailyData.map(d => ({ ...d, kwh: Number((d.kwh / 2).toFixed(3)) }));
+  return { hourlyEntries, dailyData: dailyDataAveraged };
 }
 
 async function fetchJSONFromAPI(apiUrl, sourceName) {
@@ -407,14 +423,22 @@ function sumProfiles(profileA, profileB) {
 
 function computeMonthlyTotalsFromDaily(dailyArray) {
   const months = Array.from({ length: 12 }, () => 0);
+  const monthCounts = Array.from({ length: 12 }, () => 0);
   for (const row of dailyArray) {
     const parts = String(row.day).split('-');
     if (parts.length >= 2) {
       const month = Number(parts[1]);
-      if (!Number.isNaN(month) && month >= 1 && month <= 12) months[month - 1] += row.kwh;
+      if (!Number.isNaN(month) && month >= 1 && month <= 12) {
+        months[month - 1] += row.kwh;
+        monthCounts[month - 1]++;
+      }
     }
   }
-  return months.map((v) => Number(v.toFixed(3)));
+  // If data spans multiple years (e.g., 2+ month entries per month), average them
+  return months.map((total, idx) => {
+    const count = monthCounts[idx];
+    return count > 1 ? Number((total / 2).toFixed(3)) : Number(total.toFixed(3));
+  });
 }
 
 // ─── Azimuth Conversion ────────────────────────────────────
@@ -850,18 +874,21 @@ function clearSecondaryAzimuthArrow() {
 
 function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer, handleMarker) {
   const bearing = azimuthSouthToAzimuthNorthClockwise(azimuthSouth);
-  const scale = 0.5;
-  const tip = destinationPoint(lat, lon, bearing, 220 * scale);
-  const leftHead = destinationPoint(tip.lat, tip.lon, bearing + 150, 70 * scale);
-  const rightHead = destinationPoint(tip.lat, tip.lon, bearing - 150, 70 * scale);
+  const scale = 0.85;
+  const shaftDist = 250;
+  const headDist = 95;
+  const headAngle = 165;
+  const tip = destinationPoint(lat, lon, bearing, shaftDist * scale);
+  const leftHead = destinationPoint(tip.lat, tip.lon, bearing + headAngle, headDist * scale);
+  const rightHead = destinationPoint(tip.lat, tip.lon, bearing - headAngle, headDist * scale);
 
   let handleCreated = false;
   if (!handleMarker) {
     const icon = L.divIcon({
       className: 'az-handle-icon',
       html: '<span class="az-handle-dot"></span>',
-      iconSize: [28, 28],
-      iconAnchor: [14, 14],
+      iconSize: [32, 32],
+      iconAnchor: [16, 16],
     });
     handleMarker = L.marker([tip.lat, tip.lon], { icon, interactive: true }).addTo(map);
     handleCreated = true;
@@ -872,10 +899,10 @@ function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer, 
   const shaftLL = [[lat, lon], [tip.lat, tip.lon]];
   const headLL = [[leftHead.lat, leftHead.lon], [tip.lat, tip.lon], [rightHead.lat, rightHead.lon]];
 
-  if (!shaftLayer) shaftLayer = L.polyline(shaftLL, { color, weight: 3, opacity: .95 }).addTo(map);
+  if (!shaftLayer) shaftLayer = L.polyline(shaftLL, { color, weight: 4.5, opacity: 0.92, lineCap: 'round', lineJoin: 'round' }).addTo(map);
   else shaftLayer.setLatLngs(shaftLL);
 
-  if (!headLayer) headLayer = L.polyline(headLL, { color, weight: 3, opacity: .95 }).addTo(map);
+  if (!headLayer) headLayer = L.polyline(headLL, { color, weight: 4.5, opacity: 0.92, lineCap: 'round', lineJoin: 'round' }).addTo(map);
   else headLayer.setLatLngs(headLL);
 
   if (handleCreated) {
