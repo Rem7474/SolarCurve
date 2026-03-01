@@ -1265,7 +1265,7 @@ async function exportToPDF() {
             const x = center.x + dx;
             const y = center.y + dy;
             // Use CartoDB Voyager for colorful 2D style
-            const url = `https://a.basemaps.cartocdn.com/rastered_and_labels/${zoom}/${x}/${y}.png`;
+            const url = `https://tile.opentopomap.org/${zoom}/${x}/${y}.png`;
             
             (async () => {
               try {
