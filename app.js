@@ -1231,8 +1231,12 @@ async function exportToPDF() {
     let mapImg = null;
     if (map && document.getElementById('map')) {
       try {
+        const originalZoom = map.getZoom();
+        map.setZoom(19);
+        await new Promise(resolve => setTimeout(resolve, 800));
         const canvas = await html2canvas(document.getElementById('map'), { scale: 2, useCORS: true, logging: false });
         mapImg = canvas.toDataURL('image/png', 0.95);
+        map.setZoom(originalZoom);
       } catch (err) { console.warn(err); mapImg = null; }
     }
 
