@@ -309,11 +309,7 @@ async function fetchFromPVGIS({ lat, lon, peakPower, tilt, azimuth, losses }) {
   }
 
   const dailyData = aggregateDailyData(hourlyEntries);
-  // Divide by 2 to get average from 2 years of data
-  const dailyDataAveraged = dailyData.map(d => ({ ...d, kwh: Number((d.kwh / 2).toFixed(3)) }));
-  // Also divide hourly entries by 2 for consistency
-  const hourlyEntriesAveraged = hourlyEntries.map(e => ({ ...e, kwh: Number((e.kwh / 2).toFixed(3)) }));
-  return { hourlyEntries: hourlyEntriesAveraged, dailyData: dailyDataAveraged };
+  return { hourlyEntries, dailyData };
 }
 
 async function fetchFromPVWatts({ lat, lon, peakPower, tilt, azimuth, losses, pvwattsKey }) {
@@ -363,11 +359,7 @@ async function fetchFromPVWatts({ lat, lon, peakPower, tilt, azimuth, losses, pv
   }
 
   const dailyData = aggregateDailyData(hourlyEntries);
-  // Divide by 2 to get average from 2 years of data
-  const dailyDataAveraged = dailyData.map(d => ({ ...d, kwh: Number((d.kwh / 2).toFixed(3)) }));
-  // Also divide hourly entries by 2 for consistency
-  const hourlyEntriesAveraged = hourlyEntries.map(e => ({ ...e, kwh: Number((e.kwh / 2).toFixed(3)) }));
-  return { hourlyEntries: hourlyEntriesAveraged, dailyData: dailyDataAveraged };
+  return { hourlyEntries, dailyData };
 }
 
 async function fetchJSONFromAPI(apiUrl, sourceName) {
@@ -1206,9 +1198,24 @@ async function exportToPDF() {
     if (map && window.html2canvas) {
       try {
         const mapEl = document.getElementById('map');
-        if (mapEl) {
+        if (mapEl && marker) {
+          // Save current map state
+          const originalCenter = map.getCenter();
+          const originalZoom = map.getZoom();
+          
+          // Zoom to marker at max level
+          map.setView(marker.getLatLng(), 18, { animate: false });
+          
+          // Wait for tiles and rendering
+          await new Promise((r) => setTimeout(r, 500));
+          
+          // Capture map
           const mapCanvas = await html2canvas(mapEl, { scale: 2, useCORS: true, allowTaint: true });
           mapImg = mapCanvas.toDataURL('image/png', 1.0);
+          
+          // Restore original state
+          map.setView(originalCenter, originalZoom, { animate: false });
+          await new Promise((r) => setTimeout(r, 200));
         }
       } catch (err) {
         console.warn('Erreur lors de la capture de la carte:', err);
