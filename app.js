@@ -729,12 +729,13 @@ function statCard(title, value) {
 
 // ─── Peak Shaving / Demand Response ────────────────────────
 function updatePeakShavingDisplay() {
-  const consumptionPower = Number(document.getElementById('consumptionPower').value);
-  if (!consumptionPower || consumptionPower <= 0) {
+  const consumptionPowerW = Number(document.getElementById('consumptionPower').value);
+  if (!consumptionPowerW || consumptionPowerW <= 0) {
     peakShavingSection.classList.add('hidden');
     return;
   }
 
+  const consumptionPowerKW = consumptionPowerW / 1000; // Convert W to kW
   peakShavingSection.classList.remove('hidden');
 
   // Combine hourly data from both azimuths if available
@@ -761,7 +762,7 @@ function updatePeakShavingDisplay() {
   // Calculate monthly peak shaving (production used to offset consumption)
   const shavingByMonth = Array.from({ length: 12 }, () => 0);
   for (const e of hourlyData) {
-    const hourlyConsumption = consumptionPower; // kW
+    const hourlyConsumption = consumptionPowerKW; // kW
     const hourlyProduction = e.kwh; // already in kWh per hour, so equals kW for hourly rate
     const shaved = Math.min(hourlyProduction, hourlyConsumption);
     shavingByMonth[e.month - 1] += shaved;
@@ -771,12 +772,12 @@ function updatePeakShavingDisplay() {
   const remainingByMonth = Array.from({ length: 12 }, () => 0);
   for (let m = 0; m < 12; m++) {
     const daysInMonth = [31, 28.25, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m];
-    const totalConsumption = consumptionPower * 24 * daysInMonth;
+    const totalConsumption = consumptionPowerKW * 24 * daysInMonth;
     remainingByMonth[m] = Math.max(0, totalConsumption - shavingByMonth[m]);
   }
 
   const totalShaved = shavingByMonth.reduce((a, b) => a + b, 0);
-  const totalConsumption = consumptionPower * 24 * 365.25;
+  const totalConsumption = consumptionPowerKW * 24 * 365.25;
   const shavingPct = totalConsumption > 0 ? (totalShaved / totalConsumption * 100) : 0;
 
   peakShavingStatsEl.innerHTML = [

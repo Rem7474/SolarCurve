@@ -564,6 +564,18 @@ input::placeholder {
   display: block;
 }
 
+/* Peak shaving section */
+#peakShavingSection #peakShavingStats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+#peakShavingSection .chart-container {
+  height: 380px;
+}
+
 /* Month selector */
 .month-row {
   display: flex;
