@@ -1227,14 +1227,14 @@ async function exportToPDF() {
       document.body.removeChild(c);
     }
 
-    // ─── Create map image by composing multiple OSM tiles ───
+    // ─── Create map image by composing multiple tiles (CartoDB Positron - flat 2D style) ───
     let mapImg = null;
     if (map && marker) {
       try {
         const markerLatLng = marker.getLatLng();
         const lat = markerLatLng.lat;
         const lon = markerLatLng.lng;
-        const zoom = 16; // Increased zoom for better detail
+        const zoom = 16;
         
         // Calculate tile coordinates
         const getTileCoords = (lat, lon, zoom) => {
@@ -1246,13 +1246,13 @@ async function exportToPDF() {
         const center = getTileCoords(lat, lon, zoom);
         const tileSize = 256;
         
-        // Load a 3x3 grid of tiles centered on the location
+        // Load a 3x3 grid of tiles using CartoDB Positron (flat 2D, not 3D)
         const mapCanvas = document.createElement('canvas');
         mapCanvas.width = 800;
         mapCanvas.height = 500;
         const ctx = mapCanvas.getContext('2d');
         
-        ctx.fillStyle = '#e0e0e0';
+        ctx.fillStyle = '#f0f0f0';
         ctx.fillRect(0, 0, 800, 500);
         
         let tilesLoaded = 0;
@@ -1264,7 +1264,8 @@ async function exportToPDF() {
             totalTiles++;
             const x = center.x + dx;
             const y = center.y + dy;
-            const url = `https://tile.openstreetmap.org/${zoom}/${x}/${y}.png`;
+            // Use CartoDB Positron for flat 2D style (no 3D perspective)
+            const url = `https://a.basemaps.cartocdn.com/light_all/${zoom}/${x}/${y}.png`;
             
             (async () => {
               try {
@@ -1285,36 +1286,83 @@ async function exportToPDF() {
                         ctx.drawImage(img, canvasX, canvasY, tileSize, tileSize);
                       });
                       
-                      // Add location marker
-                      ctx.fillStyle = '#ef4444';
-                      ctx.beginPath();
-                      ctx.arc(400, 250, 12, 0, Math.PI * 2);
-                      ctx.fill();
-                      ctx.fillStyle = 'white';
-                      ctx.beginPath();
-                      ctx.arc(400, 250, 6, 0, Math.PI * 2);
-                      ctx.fill();
+                      // Draw azimuth arrows on the map
+                      const drawAzimuthArrow = (azimuth, color, label) => {
+                        const arrowLength = 60;
+                        const arrowRad = (azimuth * Math.PI) / 180;
+                        
+                        const endX = 400 + arrowLength * Math.sin(arrowRad);
+                        const endY = 250 - arrowLength * Math.cos(arrowRad);
+                        
+                        // Draw arrow line
+                        ctx.strokeStyle = color;
+                        ctx.lineWidth = 3;
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
+                        ctx.beginPath();
+                        ctx.moveTo(400, 250);
+                        ctx.lineTo(endX, endY);
+                        ctx.stroke();
+                        
+                        // Draw arrowhead
+                        const headSize = 12;
+                        const angle1 = arrowRad + Math.PI / 6;
+                        const angle2 = arrowRad - Math.PI / 6;
+                        ctx.fillStyle = color;
+                        ctx.beginPath();
+                        ctx.moveTo(endX, endY);
+                        ctx.lineTo(endX - headSize * Math.cos(angle1), endY + headSize * Math.sin(angle1));
+                        ctx.lineTo(endX - headSize * Math.cos(angle2), endY + headSize * Math.sin(angle2));
+                        ctx.closePath();
+                        ctx.fill();
+                        
+                        // Label the arrow
+                        ctx.fillStyle = color;
+                        ctx.font = 'bold 11px sans-serif';
+                        ctx.fillText(label, endX + 8, endY - 5);
+                      };
                       
-                      // Add semi-transparent info panel
-                      ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-                      ctx.fillRect(10, 10, 350, 95);
-                      
-                      ctx.fillStyle = 'white';
-                      ctx.font = 'bold 12px sans-serif';
-                      ctx.fillText(`${lat.toFixed(4)}°, ${lon.toFixed(4)}°`, 18, 32);
-                      
-                      ctx.font = '11px sans-serif';
-                      ctx.fillStyle = '#ef4444';
-                      ctx.fillText(`Azimut 1: ${currentPrimaryAzimuth}°`, 18, 55);
-                      
+                      // Draw azimuth arrows
+                      drawAzimuthArrow(currentPrimaryAzimuth, '#ef4444', `Az1: ${currentPrimaryAzimuth}°`);
                       if (currentSecondaryAzimuth !== null) {
-                        ctx.fillStyle = '#60a5fa';
-                        ctx.fillText(`Azimut 2: ${currentSecondaryAzimuth}°`, 18, 73);
+                        drawAzimuthArrow(currentSecondaryAzimuth, '#60a5fa', `Az2: ${currentSecondaryAzimuth}°`);
                       }
                       
-                      ctx.fillStyle = 'rgba(255,255,255,0.6)';
-                      ctx.font = '9px sans-serif';
-                      ctx.fillText('© OpenStreetMap contributors', 10, 495);
+                      // Draw location marker (building-like icon)
+                      ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+                      ctx.fillRect(395, 245, 10, 10);
+                      ctx.fillStyle = '#ef4444';
+                      ctx.beginPath();
+                      ctx.arc(400, 250, 8, 0, Math.PI * 2);
+                      ctx.fill();
+                      ctx.fillStyle = 'white';
+                      ctx.beginPath();
+                      ctx.arc(400, 250, 4, 0, Math.PI * 2);
+                      ctx.fill();
+                      
+                      // Add info panel
+                      ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+                      ctx.fillRect(10, 10, 280, 85);
+                      ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+                      ctx.lineWidth = 1;
+                      ctx.strokeRect(10, 10, 280, 85);
+                      
+                      ctx.fillStyle = '#1f2937';
+                      ctx.font = 'bold 11px sans-serif';
+                      ctx.fillText(`${lat.toFixed(4)}°, ${lon.toFixed(4)}°`, 18, 30);
+                      
+                      ctx.font = '10px sans-serif';
+                      ctx.fillStyle = '#ef4444';
+                      ctx.fillText(`Azimut 1: ${currentPrimaryAzimuth}°`, 18, 50);
+                      
+                      if (currentSecondaryAzimuth !== null) {
+                        ctx.fillStyle = '#2563eb';
+                        ctx.fillText(`Azimut 2: ${currentSecondaryAzimuth}°`, 18, 66);
+                      }
+                      
+                      ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+                      ctx.font = '8px sans-serif';
+                      ctx.fillText('© CartoDB, © OpenStreetMap', 10, 495);
                       
                       mapImg = mapCanvas.toDataURL('image/png', 0.95);
                     }
@@ -1324,7 +1372,6 @@ async function exportToPDF() {
               } catch (e) {
                 tilesLoaded++;
                 if (tilesLoaded === totalTiles) {
-                  // Use fallback even if some failed
                   mapImg = mapCanvas.toDataURL('image/png', 0.95);
                 }
               }
@@ -1360,7 +1407,7 @@ async function exportToPDF() {
           mapCanvas.height = 500;
           const ctx = mapCanvas.getContext('2d');
           
-          ctx.fillStyle = '#c5e1a5';
+          ctx.fillStyle = '#f0f0f0';
           ctx.fillRect(0, 0, 800, 500);
           
           ctx.fillStyle = '#1f2937';
