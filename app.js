@@ -1264,8 +1264,8 @@ async function exportToPDF() {
             totalTiles++;
             const x = center.x + dx;
             const y = center.y + dy;
-            // Use CartoDB Positron for flat 2D style (no 3D perspective)
-            const url = `https://a.basemaps.cartocdn.com/light_all/${zoom}/${x}/${y}.png`;
+            // Use CartoDB Voyager for colorful 2D style
+            const url = `https://a.basemaps.cartocdn.com/rastered_and_labels/${zoom}/${x}/${y}.png`;
             
             (async () => {
               try {
