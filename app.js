@@ -1237,6 +1237,19 @@ async function exportToPDF() {
     }
 
         // ─────────────────── Page 1: Synthèse ───────────────────
+    
+    // --- Build PDF (A4 portrait) ---
+    const jsPDFGlobal = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF || (window.jspdf || null);
+    if (!jsPDFGlobal) throw new Error('jsPDF introuvable.');
+    const DocC = typeof jsPDFGlobal === 'function' ? jsPDFGlobal : jsPDFGlobal.jsPDF || jsPDFGlobal;
+    const doc = new DocC({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const W = doc.internal.pageSize.getWidth();
+    const H = doc.internal.pageSize.getHeight();
+    const M = 15;
+    const contentW = W - M * 2;
+    let y = 50;
+    let pageNum = 0;
+
     pageNum++;
     // Header banner
     doc.setFillColor(15, 23, 42);
