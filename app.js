@@ -781,10 +781,19 @@ function updatePeakShavingDisplay() {
   const totalProduction = totalShaved + totalSurplus; // Total production
   const shavingPct = totalConsumption > 0 ? (totalShaved / totalConsumption * 100) : 0;
 
+  // Calculate monthly self-consumption rates
+  const MONTHS_SHORT = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+  const monthlyRatesHtml = MONTHS_SHORT.map((month, idx) => {
+    const prodMonth = shavingByMonth[idx] + surplusByMonth[idx];
+    const rateMonth = prodMonth > 0 ? (shavingByMonth[idx] / prodMonth * 100) : 0;
+    return `<span style="display:inline-block; margin-right:12px; margin-bottom:6px; padding:4px 8px; background:#f0fdf4; border-radius:4px; font-size:11px;"><strong>${month}</strong> ${rateMonth.toFixed(1)}%</span>`;
+  }).join('');
+
   peakShavingStatsEl.innerHTML = [
     statCard('Autoconsommé', `${totalShaved.toFixed(1)} kWh`),
     statCard('Taux d\'autoconsommation', `${shavingPct.toFixed(1)} %`),
     statCard('Surplus (non utilisé)', `${totalSurplus.toFixed(1)} kWh`),
+    `<div style="margin-top:12px; padding-top:12px; border-top:1px solid #e2e8f0;"><p style="margin:0 0 8px 0; font-size:12px; color:#64748b;"><strong>Taux d'autoconsommation mensuel:</strong></p><div>${monthlyRatesHtml}</div></div>`,
   ].join('');
 
   // Render stacked bar chart for monthly peak shaving
@@ -1154,6 +1163,10 @@ async function exportToPDF() {
       // Self-consumption and surplus per day for this month (already from avg profile, no need to divide)
       const avgSelfConsumptionPerDay = consumptionPowerW > 0 ? totalSelfConsumption : 0;
       const avgSurplusPerDay = consumptionPowerW > 0 ? totalSurplus : 0;
+      
+      // Calculate self-consumption rate for this month
+      const totalProdPerDay = avgSelfConsumptionPerDay + avgSurplusPerDay;
+      const selfConsumptionRate = totalProdPerDay > 0 ? (avgSelfConsumptionPerDay / totalProdPerDay * 100) : 0;
 
       const c = document.createElement('canvas');
       c.width = 900;
@@ -1197,7 +1210,8 @@ async function exportToPDF() {
         month: m, 
         src: c.toDataURL('image/png', 1.0),
         avgSelfConsumption: avgSelfConsumptionPerDay,
-        avgSurplus: avgSurplusPerDay
+        avgSurplus: avgSurplusPerDay,
+        selfConsumptionRate: selfConsumptionRate
       });
       ch.destroy();
       document.body.removeChild(c);
@@ -1216,8 +1230,11 @@ async function exportToPDF() {
           // Zoom to marker at max level
           map.setView(marker.getLatLng(), 18, { animate: false });
           
+          // Force Leaflet to invalidate and redraw all layers including arrows
+          map.invalidateSize();
+          
           // Wait for tiles and rendering
-          await new Promise((r) => setTimeout(r, 500));
+          await new Promise((r) => setTimeout(r, 800));
           
           // Capture map
           const mapCanvas = await html2canvas(mapEl, { scale: 2, useCORS: true, allowTaint: true });
@@ -1225,7 +1242,8 @@ async function exportToPDF() {
           
           // Restore original state
           map.setView(originalCenter, originalZoom, { animate: false });
-          await new Promise((r) => setTimeout(r, 200));
+          map.invalidateSize();
+          await new Promise((r) => setTimeout(r, 300));
         }
       } catch (err) {
         console.warn('Erreur lors de la capture de la carte:', err);
@@ -1560,7 +1578,8 @@ async function exportToPDF() {
           const statsY = cy + cellH - 13;
           doc.setFontSize(6.5);
           doc.setTextColor(100, 116, 139);
-          doc.text(`Autoconso. : ${chartImages[globalIdx].avgSelfConsumption.toFixed(2)} kWh/j | Surplus : ${chartImages[globalIdx].avgSurplus.toFixed(2)} kWh/j`, cx + 4, statsY);
+          const rate = chartImages[globalIdx].selfConsumptionRate;
+          doc.text(`Autoconso. : ${chartImages[globalIdx].avgSelfConsumption.toFixed(2)} kWh/j (${rate.toFixed(1)}%) | Surplus : ${chartImages[globalIdx].avgSurplus.toFixed(2)} kWh/j`, cx + 4, statsY);
         }
       }
 
