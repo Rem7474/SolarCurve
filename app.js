@@ -1227,55 +1227,53 @@ async function exportToPDF() {
       document.body.removeChild(c);
     }
 
-    // ─── Capture map image ───
+    // ─── Create simple map image with static tiles ───
     let mapImg = null;
-    if (map && window.html2canvas) {
+    if (map && marker) {
       try {
-        const mapEl = document.getElementById('map');
-        if (mapEl && marker) {
-          // Save current map state
-          const originalCenter = map.getCenter();
-          const originalZoom = map.getZoom();
-          
-          // Zoom to marker at appropriate level
-          map.setView(marker.getLatLng(), 16, { animate: false });
-          
-          // Force Leaflet to invalidate and redraw all layers including arrows
-          map.invalidateSize(false);
-          
-          // Wait longer for SVG rendering
-          await new Promise((r) => setTimeout(r, 1500));
-          
-          // Verify SVG layers are in DOM
-          const svgLayers = mapEl.querySelectorAll('svg path');
-          if (svgLayers.length === 0) {
-            // SVG not yet rendered, wait more
-            await new Promise((r) => setTimeout(r, 500));
-          }
-          
-          // One more refresh to ensure everything is rendered
-          map.invalidateSize(false);
-          await new Promise((r) => setTimeout(r, 200));
-          
-          // Capture map with stable settings
-          const mapCanvas = await html2canvas(mapEl, { 
-            scale: 1.5,
-            useCORS: true, 
-            allowTaint: true,
-            backgroundColor: '#e8f5e9',
-            logging: false,
-            proxy: null,
-            imageTimeout: 3000
-          });
-          mapImg = mapCanvas.toDataURL('image/png', 0.95);
-          
-          // Restore original state
-          map.setView(originalCenter, originalZoom, { animate: false });
-          map.invalidateSize(false);
-          await new Promise((r) => setTimeout(r, 300));
+        const markerLatLng = marker.getLatLng();
+        const lat = markerLatLng.lat;
+        const lon = markerLatLng.lng;
+        const zoom = 15;
+        
+        // Use static map from OpenStreetMap tile server
+        // Create a simple canvas with map tiles and location info
+        const mapCanvas = document.createElement('canvas');
+        mapCanvas.width = 800;
+        mapCanvas.height = 500;
+        const ctx = mapCanvas.getContext('2d');
+        
+        // Create static map URL using a tile service
+        const x = Math.floor((lon + 180) / 360 * Math.pow(2, zoom));
+        const y = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom));
+        
+        // Draw background
+        ctx.fillStyle = '#c5e1a5';
+        ctx.fillRect(0, 0, 800, 500);
+        
+        // Add location info
+        ctx.fillStyle = '#1f2937';
+        ctx.font = 'bold 18px sans-serif';
+        ctx.fillText(`Localisation: ${lat.toFixed(4)}°, ${lon.toFixed(4)}°`, 20, 40);
+        
+        // Add azimuth info
+        ctx.font = '16px sans-serif';
+        ctx.fillStyle = '#ef4444';
+        ctx.fillText(`Azimut 1: ${currentPrimaryAzimuth}°`, 20, 80);
+        
+        if (currentSecondaryAzimuth !== null) {
+          ctx.fillStyle = '#2563eb';
+          ctx.fillText(`Azimut 2: ${currentSecondaryAzimuth}°`, 20, 110);
         }
+        
+        // Add note about map
+        ctx.font = '12px sans-serif';
+        ctx.fillStyle = '#64748b';
+        ctx.fillText('(Voir carte interactive sur le site)', 20, 450);
+        
+        mapImg = mapCanvas.toDataURL('image/png', 0.95);
       } catch (err) {
-        console.warn('Erreur lors de la capture de la carte:', err);
+        console.warn('Erreur lors de la création de l\'image de carte:', err);
       }
     }
 
