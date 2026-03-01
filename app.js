@@ -1243,65 +1243,75 @@ async function exportToPDF() {
 
     y = 46;
 
-    // ── Parameters and Map Section (2 columns) ──
-    const leftColW = 85;
-    const rightColW = 85;
-    const colGap = 10;
-
-    // LEFT COLUMN: Parameters
+    // ── Parameters Section (full width) ──
     doc.setFontSize(11);
     doc.setTextColor(15, 23, 42);
-    doc.text('Paramètres', M, y);
+    doc.text('Paramètres de l\'installation', M, y);
     y += 5;
 
     doc.setFillColor(248, 250, 252);
     doc.setDrawColor(226, 232, 240);
     const pCardH = hasSecondary ? 32 : 26;
-    doc.roundedRect(M, y, leftColW, pCardH, 3, 3, 'FD');
+    doc.roundedRect(M, y, contentW, pCardH, 3, 3, 'FD');
 
     doc.setFontSize(8.5);
     const pX = M + 5;
+    const pCol2 = M + contentW / 2;
     const pY1 = y + 7;
     const pY2 = y + 15;
     const pY3 = y + 23;
 
     doc.setTextColor(100, 116, 139);
     doc.text('Position', pX, pY1);
-    doc.text('Puissance', pX, pY2);
-    doc.text('Inclinaison', pX, pY3);
+    doc.text('Puissance crête', pCol2, pY1);
+    doc.text('Inclinaison', pX, pY2);
+    doc.text('Pertes', pCol2, pY2);
 
     doc.setTextColor(15, 23, 42);
-    doc.setFontSize(8.5);
-    doc.text(`${latInput.value || '-'}°`, pX + 22, pY1);
-    doc.text(`${(Number(peakWc)/1000).toFixed(2)}kWc`, pX + 22, pY2);
-    doc.text(`${document.getElementById('tilt').value}°`, pX + 22, pY3);
+    doc.setFontSize(9);
+    doc.text(`${latInput.value || '-'}, ${lonInput.value || '-'}`, pX + 28, pY1);
+    doc.text(`${peakWc} Wc (${(Number(peakWc)/1000).toFixed(2)} kWc)`, pCol2 + 32, pY1);
+    doc.text(`${document.getElementById('tilt').value}°`, pX + 28, pY2);
+    doc.text(`${document.getElementById('losses').value} %`, pCol2 + 32, pY2);
 
     if (hasSecondary) {
       doc.setTextColor(100, 116, 139);
-      doc.setFontSize(8);
-      doc.text('Az1', pX, pY1 + 8);
-      doc.text('Az2', pX + 18, pY1 + 8);
-      doc.setTextColor(15, 23, 42);
       doc.setFontSize(8.5);
-      doc.text(`${currentPrimaryAzimuth}°`, pX + 12, pY1 + 8);
-      doc.text(`${currentSecondaryAzimuth}°`, pX + 30, pY1 + 8);
-    }
-
-    // RIGHT COLUMN: Map
-    const mapX = M + leftColW + colGap;
-    if (mapImg) {
-      doc.setFontSize(11);
+      doc.text('Azimut 1', pX, pY3);
+      doc.text('Azimut 2', pCol2, pY3);
       doc.setTextColor(15, 23, 42);
-      doc.text('Localisation', mapX, y);
-      const mapY = y + 5;
-      const mapH = pCardH + 2;
-      doc.setDrawColor(226, 232, 240);
-      doc.setLineWidth(0.5);
-      doc.rect(mapX, mapY, rightColW, mapH);
-      doc.addImage(mapImg, 'PNG', mapX + 1, mapY + 1, rightColW - 2, mapH - 2);
+      doc.setFontSize(9);
+      doc.text(`${currentPrimaryAzimuth}°`, pX + 28, pY3);
+      doc.text(`${currentSecondaryAzimuth}°`, pCol2 + 32, pY3);
+    } else {
+      doc.setTextColor(100, 116, 139);
+      doc.setFontSize(8.5);
+      doc.text('Azimut', pX, pY3 - 8);
+      doc.setTextColor(15, 23, 42);
+      doc.setFontSize(9);
+      doc.text(`${currentPrimaryAzimuth ?? azimuthInput.value}°`, pX + 28, pY3 - 8);
     }
 
     y += pCardH + 8;
+
+    // ── Map Section (full width) ──
+    if (mapImg) {
+      doc.setFontSize(11);
+      doc.setTextColor(15, 23, 42);
+      doc.text('Localisation', M, y);
+      y += 5;
+      
+      const mapCardH = 90;
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(M, y, contentW, mapCardH, 3, 3, 'FD');
+      
+      // Map image with padding
+      const mapImgPad = 2;
+      doc.addImage(mapImg, 'PNG', M + mapImgPad, y + mapImgPad, contentW - mapImgPad * 2, mapCardH - mapImgPad * 2);
+      
+      y += mapCardH + 8;
+    }
 
 
     // ── Summary boxes ──
