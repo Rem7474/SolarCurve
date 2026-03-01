@@ -755,13 +755,16 @@ function updatePeakShavingDisplay() {
     }
   }
 
-  // Calculate monthly peak shaving (production used to offset consumption)
+  // Calculate monthly peak shaving (production used to offset consumption) and surplus
   const shavingByMonth = Array.from({ length: 12 }, () => 0);
+  const surplusByMonth = Array.from({ length: 12 }, () => 0);
   for (const e of hourlyData) {
     const hourlyConsumption = consumptionPowerKW; // kW
     const hourlyProduction = e.kwh; // already in kWh per hour, so equals kW for hourly rate
     const shaved = Math.min(hourlyProduction, hourlyConsumption);
+    const surplus = Math.max(0, hourlyProduction - hourlyConsumption);
     shavingByMonth[e.month - 1] += shaved;
+    surplusByMonth[e.month - 1] += surplus;
   }
 
   // Compute remaining consumption (not offset by production)
@@ -773,13 +776,15 @@ function updatePeakShavingDisplay() {
   }
 
   const totalShaved = shavingByMonth.reduce((a, b) => a + b, 0);
+  const totalSurplus = surplusByMonth.reduce((a, b) => a + b, 0);
   const totalConsumption = consumptionPowerKW * 24 * 365.25;
+  const totalProduction = totalShaved + totalSurplus; // Total production
   const shavingPct = totalConsumption > 0 ? (totalShaved / totalConsumption * 100) : 0;
 
   peakShavingStatsEl.innerHTML = [
-    statCard('Effacement total annuel', `${totalShaved.toFixed(1)} kWh`),
-    statCard('Taux de réduction', `${shavingPct.toFixed(1)} %`),
-    statCard('Consommation restante', `${(totalConsumption - totalShaved).toFixed(1)} kWh`),
+    statCard('Autoconsommé', `${totalShaved.toFixed(1)} kWh`),
+    statCard('Taux d\'autoconsommation', `${shavingPct.toFixed(1)} %`),
+    statCard('Surplus (non utilisé)', `${totalSurplus.toFixed(1)} kWh`),
   ].join('');
 
   // Render stacked bar chart for monthly peak shaving
@@ -1133,18 +1138,22 @@ async function exportToPDF() {
       // Calculate consumption line and self-consumption
       const consumptionLine = Array(24).fill(consumptionPowerKW);
       let totalSelfConsumption = 0;
+      let totalSurplus = 0;
       
       if (consumptionPowerW > 0) {
         // Calculate self-consumption (min of production and consumption) for each hour
         for (let h = 0; h < 24; h++) {
           const totalProd = pm[h] + (sm ? sm[h] : 0);
           const selfConsumed = Math.min(totalProd, consumptionPowerKW);
+          const surplus = Math.max(0, totalProd - consumptionPowerKW);
           totalSelfConsumption += selfConsumed;
+          totalSurplus += surplus;
         }
       }
       
-      // Average self-consumption per day for this month
-      const avgSelfConsumptionPerDay = consumptionPowerW > 0 ? (totalSelfConsumption / DAYS_IN_MONTH[m - 1]) : 0;
+      // Self-consumption and surplus per day for this month (already from avg profile, no need to divide)
+      const avgSelfConsumptionPerDay = consumptionPowerW > 0 ? totalSelfConsumption : 0;
+      const avgSurplusPerDay = consumptionPowerW > 0 ? totalSurplus : 0;
 
       const c = document.createElement('canvas');
       c.width = 900;
@@ -1187,7 +1196,8 @@ async function exportToPDF() {
       chartImages.push({ 
         month: m, 
         src: c.toDataURL('image/png', 1.0),
-        avgSelfConsumption: avgSelfConsumptionPerDay
+        avgSelfConsumption: avgSelfConsumptionPerDay,
+        avgSurplus: avgSurplusPerDay
       });
       ch.destroy();
       document.body.removeChild(c);
@@ -1545,12 +1555,12 @@ async function exportToPDF() {
         const imgH = cellH - titleH - 16;
         doc.addImage(chartImages[globalIdx].src, 'PNG', cx + imgPad, cy + titleH, cellW - imgPad * 2, imgH);
 
-        // Self-consumption stats below chart
-        if (chartImages[globalIdx].avgSelfConsumption > 0) {
+        // Self-consumption and surplus stats below chart
+        if (chartImages[globalIdx].avgSelfConsumption > 0 || chartImages[globalIdx].avgSurplus > 0) {
           const statsY = cy + cellH - 13;
-          doc.setFontSize(7);
+          doc.setFontSize(6.5);
           doc.setTextColor(100, 116, 139);
-          doc.text(`Autoconsommation moy. : ${chartImages[globalIdx].avgSelfConsumption.toFixed(2)} kWh/j`, cx + 4, statsY);
+          doc.text(`Autoconso. : ${chartImages[globalIdx].avgSelfConsumption.toFixed(2)} kWh/j | Surplus : ${chartImages[globalIdx].avgSurplus.toFixed(2)} kWh/j`, cx + 4, statsY);
         }
       }
 
