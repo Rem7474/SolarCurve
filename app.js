@@ -1227,80 +1227,134 @@ async function exportToPDF() {
       document.body.removeChild(c);
     }
 
-    // ─── Create map image ───
+    // ─── Create map image by composing multiple OSM tiles ───
     let mapImg = null;
     if (map && marker) {
       try {
         const markerLatLng = marker.getLatLng();
         const lat = markerLatLng.lat;
         const lon = markerLatLng.lng;
-        const zoom = 15;
+        const zoom = 16; // Increased zoom for better detail
         
-        // Load static map from OpenStreetMap tiles
-        const staticMapUrl = `https://tile.openstreetmap.org/${zoom}/${Math.floor((lon + 180) / 360 * Math.pow(2, zoom))}/${Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom))}.png`;
+        // Calculate tile coordinates
+        const getTileCoords = (lat, lon, zoom) => {
+          const x = Math.floor((lon + 180) / 360 * Math.pow(2, zoom));
+          const y = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom));
+          return { x, y };
+        };
         
-        try {
-          const response = await fetch(staticMapUrl, { mode: 'cors' });
-          if (response.ok) {
-            const blob = await response.blob();
-            mapImg = await new Promise((resolve) => {
-              const reader = new FileReader();
-              reader.onloadend = () => resolve(reader.result);
-              reader.readAsDataURL(blob);
-            });
+        const center = getTileCoords(lat, lon, zoom);
+        const tileSize = 256;
+        
+        // Load a 3x3 grid of tiles centered on the location
+        const mapCanvas = document.createElement('canvas');
+        mapCanvas.width = 800;
+        mapCanvas.height = 500;
+        const ctx = mapCanvas.getContext('2d');
+        
+        ctx.fillStyle = '#e0e0e0';
+        ctx.fillRect(0, 0, 800, 500);
+        
+        let tilesLoaded = 0;
+        let totalTiles = 0;
+        const tileImages = [];
+        
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            totalTiles++;
+            const x = center.x + dx;
+            const y = center.y + dy;
+            const url = `https://tile.openstreetmap.org/${zoom}/${x}/${y}.png`;
+            
+            (async () => {
+              try {
+                const response = await fetch(url, { mode: 'cors' });
+                if (response.ok) {
+                  const blob = await response.blob();
+                  const img = new Image();
+                  img.crossOrigin = 'anonymous';
+                  img.onload = () => {
+                    tileImages.push({ dx, dy, img });
+                    tilesLoaded++;
+                    
+                    if (tilesLoaded === totalTiles) {
+                      // All tiles loaded, compose them
+                      tileImages.forEach(({ dx, dy, img }) => {
+                        const canvasX = 400 + dx * tileSize - tileSize / 2;
+                        const canvasY = 250 + dy * tileSize - tileSize / 2;
+                        ctx.drawImage(img, canvasX, canvasY, tileSize, tileSize);
+                      });
+                      
+                      // Add location marker
+                      ctx.fillStyle = '#ef4444';
+                      ctx.beginPath();
+                      ctx.arc(400, 250, 12, 0, Math.PI * 2);
+                      ctx.fill();
+                      ctx.fillStyle = 'white';
+                      ctx.beginPath();
+                      ctx.arc(400, 250, 6, 0, Math.PI * 2);
+                      ctx.fill();
+                      
+                      // Add semi-transparent info panel
+                      ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+                      ctx.fillRect(10, 10, 350, 95);
+                      
+                      ctx.fillStyle = 'white';
+                      ctx.font = 'bold 12px sans-serif';
+                      ctx.fillText(`${lat.toFixed(4)}°, ${lon.toFixed(4)}°`, 18, 32);
+                      
+                      ctx.font = '11px sans-serif';
+                      ctx.fillStyle = '#ef4444';
+                      ctx.fillText(`Azimut 1: ${currentPrimaryAzimuth}°`, 18, 55);
+                      
+                      if (currentSecondaryAzimuth !== null) {
+                        ctx.fillStyle = '#60a5fa';
+                        ctx.fillText(`Azimut 2: ${currentSecondaryAzimuth}°`, 18, 73);
+                      }
+                      
+                      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+                      ctx.font = '9px sans-serif';
+                      ctx.fillText('© OpenStreetMap contributors', 10, 495);
+                      
+                      mapImg = mapCanvas.toDataURL('image/png', 0.95);
+                    }
+                  };
+                  img.src = URL.createObjectURL(blob);
+                }
+              } catch (e) {
+                tilesLoaded++;
+                if (tilesLoaded === totalTiles) {
+                  // Use fallback even if some failed
+                  mapImg = mapCanvas.toDataURL('image/png', 0.95);
+                }
+              }
+            })();
           }
-        } catch {
-          // Fallback: simple canvas map
-          mapImg = null;
         }
         
-        // If we have the base tile, add overlay with info
-        if (mapImg) {
-          const baseImg = new Image();
-          baseImg.src = mapImg;
-          baseImg.onload = () => {
-            const mapCanvas = document.createElement('canvas');
-            mapCanvas.width = 800;
-            mapCanvas.height = 500;
-            const ctx = mapCanvas.getContext('2d');
-            
-            // Draw tile
-            ctx.drawImage(baseImg, 0, 0, 800, 500);
-            
-            // Add location marker (center)
-            ctx.fillStyle = '#2563eb';
-            ctx.globalAlpha = 0.9;
-            ctx.beginPath();
-            ctx.arc(400, 250, 20, 0, Math.PI * 2);
-            ctx.fill();
-            
-            ctx.fillStyle = 'white';
-            ctx.globalAlpha = 1;
-            ctx.beginPath();
-            ctx.arc(400, 250, 10, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Add info panel
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            ctx.fillRect(10, 10, 380, 100);
-            
-            ctx.fillStyle = 'white';
-            ctx.font = 'bold 13px sans-serif';
-            ctx.fillText(`${lat.toFixed(4)}°, ${lon.toFixed(4)}°`, 20, 35);
-            
-            ctx.font = '12px sans-serif';
-            ctx.fillStyle = '#ef4444';
-            ctx.fillText(`Az1: ${currentPrimaryAzimuth}°`, 20, 60);
-            
-            if (currentSecondaryAzimuth !== null) {
-              ctx.fillStyle = '#60a5fa';
-              ctx.fillText(`Az2: ${currentSecondaryAzimuth}°`, 20, 80);
+        // Wait for tiles to load with timeout
+        await new Promise(resolve => {
+          const checkInterval = setInterval(() => {
+            if (tilesLoaded === totalTiles || mapImg) {
+              clearInterval(checkInterval);
+              resolve();
             }
-            
-            mapImg = mapCanvas.toDataURL('image/png', 0.95);
-          };
-        } else {
-          // Create fallback canvas map
+          }, 100);
+          setTimeout(() => {
+            clearInterval(checkInterval);
+            resolve();
+          }, 3000);
+        });
+        
+      } catch (err) {
+        console.warn('Erreur carte:', err);
+        
+        // Fallback: simple canvas
+        if (!mapImg && marker) {
+          const markerLatLng = marker.getLatLng();
+          const lat = markerLatLng.lat;
+          const lon = markerLatLng.lng;
+          
           const mapCanvas = document.createElement('canvas');
           mapCanvas.width = 800;
           mapCanvas.height = 500;
@@ -1309,35 +1363,12 @@ async function exportToPDF() {
           ctx.fillStyle = '#c5e1a5';
           ctx.fillRect(0, 0, 800, 500);
           
-          // Draw location marker
-          ctx.fillStyle = '#2563eb';
-          ctx.beginPath();
-          ctx.arc(400, 250, 15, 0, Math.PI * 2);
-          ctx.fill();
-          
-          ctx.fillStyle = 'white';
-          ctx.beginPath();
-          ctx.arc(400, 250, 8, 0, Math.PI * 2);
-          ctx.fill();
-          
-          // Add location info
           ctx.fillStyle = '#1f2937';
           ctx.font = 'bold 16px sans-serif';
           ctx.fillText(`${lat.toFixed(4)}°, ${lon.toFixed(4)}°`, 30, 50);
           
-          ctx.font = '14px sans-serif';
-          ctx.fillStyle = '#ef4444';
-          ctx.fillText(`Azimut 1: ${currentPrimaryAzimuth}°`, 30, 80);
-          
-          if (currentSecondaryAzimuth !== null) {
-            ctx.fillStyle = '#2563eb';
-            ctx.fillText(`Azimut 2: ${currentSecondaryAzimuth}°`, 30, 110);
-          }
-          
           mapImg = mapCanvas.toDataURL('image/png', 0.95);
         }
-      } catch (err) {
-        console.warn('Erreur carte:', err);
       }
     }
 
