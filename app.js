@@ -1227,7 +1227,7 @@ async function exportToPDF() {
       document.body.removeChild(c);
     }
 
-    // ─── Create simple map image with static tiles ───
+    // ─── Create map image ───
     let mapImg = null;
     if (map && marker) {
       try {
@@ -1236,44 +1236,108 @@ async function exportToPDF() {
         const lon = markerLatLng.lng;
         const zoom = 15;
         
-        // Use static map from OpenStreetMap tile server
-        // Create a simple canvas with map tiles and location info
-        const mapCanvas = document.createElement('canvas');
-        mapCanvas.width = 800;
-        mapCanvas.height = 500;
-        const ctx = mapCanvas.getContext('2d');
+        // Load static map from OpenStreetMap tiles
+        const staticMapUrl = `https://tile.openstreetmap.org/${zoom}/${Math.floor((lon + 180) / 360 * Math.pow(2, zoom))}/${Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom))}.png`;
         
-        // Create static map URL using a tile service
-        const x = Math.floor((lon + 180) / 360 * Math.pow(2, zoom));
-        const y = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom));
-        
-        // Draw background
-        ctx.fillStyle = '#c5e1a5';
-        ctx.fillRect(0, 0, 800, 500);
-        
-        // Add location info
-        ctx.fillStyle = '#1f2937';
-        ctx.font = 'bold 18px sans-serif';
-        ctx.fillText(`Localisation: ${lat.toFixed(4)}°, ${lon.toFixed(4)}°`, 20, 40);
-        
-        // Add azimuth info
-        ctx.font = '16px sans-serif';
-        ctx.fillStyle = '#ef4444';
-        ctx.fillText(`Azimut 1: ${currentPrimaryAzimuth}°`, 20, 80);
-        
-        if (currentSecondaryAzimuth !== null) {
-          ctx.fillStyle = '#2563eb';
-          ctx.fillText(`Azimut 2: ${currentSecondaryAzimuth}°`, 20, 110);
+        try {
+          const response = await fetch(staticMapUrl, { mode: 'cors' });
+          if (response.ok) {
+            const blob = await response.blob();
+            mapImg = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result);
+              reader.readAsDataURL(blob);
+            });
+          }
+        } catch {
+          // Fallback: simple canvas map
+          mapImg = null;
         }
         
-        // Add note about map
-        ctx.font = '12px sans-serif';
-        ctx.fillStyle = '#64748b';
-        ctx.fillText('(Voir carte interactive sur le site)', 20, 450);
-        
-        mapImg = mapCanvas.toDataURL('image/png', 0.95);
+        // If we have the base tile, add overlay with info
+        if (mapImg) {
+          const baseImg = new Image();
+          baseImg.src = mapImg;
+          baseImg.onload = () => {
+            const mapCanvas = document.createElement('canvas');
+            mapCanvas.width = 800;
+            mapCanvas.height = 500;
+            const ctx = mapCanvas.getContext('2d');
+            
+            // Draw tile
+            ctx.drawImage(baseImg, 0, 0, 800, 500);
+            
+            // Add location marker (center)
+            ctx.fillStyle = '#2563eb';
+            ctx.globalAlpha = 0.9;
+            ctx.beginPath();
+            ctx.arc(400, 250, 20, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.fillStyle = 'white';
+            ctx.globalAlpha = 1;
+            ctx.beginPath();
+            ctx.arc(400, 250, 10, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Add info panel
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(10, 10, 380, 100);
+            
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 13px sans-serif';
+            ctx.fillText(`${lat.toFixed(4)}°, ${lon.toFixed(4)}°`, 20, 35);
+            
+            ctx.font = '12px sans-serif';
+            ctx.fillStyle = '#ef4444';
+            ctx.fillText(`Az1: ${currentPrimaryAzimuth}°`, 20, 60);
+            
+            if (currentSecondaryAzimuth !== null) {
+              ctx.fillStyle = '#60a5fa';
+              ctx.fillText(`Az2: ${currentSecondaryAzimuth}°`, 20, 80);
+            }
+            
+            mapImg = mapCanvas.toDataURL('image/png', 0.95);
+          };
+        } else {
+          // Create fallback canvas map
+          const mapCanvas = document.createElement('canvas');
+          mapCanvas.width = 800;
+          mapCanvas.height = 500;
+          const ctx = mapCanvas.getContext('2d');
+          
+          ctx.fillStyle = '#c5e1a5';
+          ctx.fillRect(0, 0, 800, 500);
+          
+          // Draw location marker
+          ctx.fillStyle = '#2563eb';
+          ctx.beginPath();
+          ctx.arc(400, 250, 15, 0, Math.PI * 2);
+          ctx.fill();
+          
+          ctx.fillStyle = 'white';
+          ctx.beginPath();
+          ctx.arc(400, 250, 8, 0, Math.PI * 2);
+          ctx.fill();
+          
+          // Add location info
+          ctx.fillStyle = '#1f2937';
+          ctx.font = 'bold 16px sans-serif';
+          ctx.fillText(`${lat.toFixed(4)}°, ${lon.toFixed(4)}°`, 30, 50);
+          
+          ctx.font = '14px sans-serif';
+          ctx.fillStyle = '#ef4444';
+          ctx.fillText(`Azimut 1: ${currentPrimaryAzimuth}°`, 30, 80);
+          
+          if (currentSecondaryAzimuth !== null) {
+            ctx.fillStyle = '#2563eb';
+            ctx.fillText(`Azimut 2: ${currentSecondaryAzimuth}°`, 30, 110);
+          }
+          
+          mapImg = mapCanvas.toDataURL('image/png', 0.95);
+        }
       } catch (err) {
-        console.warn('Erreur lors de la création de l\'image de carte:', err);
+        console.warn('Erreur carte:', err);
       }
     }
 
