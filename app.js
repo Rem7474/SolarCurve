@@ -793,32 +793,46 @@ function updatePeakShavingDisplay() {
 function renderPeakShavingChart(shavingByMonth, remainingByMonth) {
   if (!peakShavingChartCanvas) return;
 
-  if (peakShavingChart) peakShavingChart.destroy();
+  if (peakShavingChart) {
+    peakShavingChart.destroy();
+  }
+
+  // Force canvas to match container size
+  const container = peakShavingChartCanvas.parentElement;
+  if (container) {
+    const rect = container.getBoundingClientRect();
+    peakShavingChartCanvas.width = rect.width - 32; // Subtract padding
+    peakShavingChartCanvas.height = rect.height;
+  }
 
   const MONTHS_SHORT = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
 
-  peakShavingChart = new Chart(peakShavingChartCanvas, {
-    type: 'bar',
-    data: {
-      labels: MONTHS_SHORT,
-      datasets: [
-        { label: 'Effacement ', data: shavingByMonth, backgroundColor: '#059669', borderRadius: 0 },
-        { label: 'Consommation restante', data: remainingByMonth, backgroundColor: '#cbd5e1', borderRadius: 0 },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: true,
-      indexAxis: undefined,
-      plugins: {
-        legend: { display: true, position: 'top', labels: { font: { size: 13 }, padding: 14 } },
+  // Use setTimeout to ensure DOM is ready
+  setTimeout(() => {
+    peakShavingChart = new Chart(peakShavingChartCanvas, {
+      type: 'bar',
+      data: {
+        labels: MONTHS_SHORT,
+        datasets: [
+          { label: 'Effacement', data: shavingByMonth, backgroundColor: '#059669', borderColor: '#059669', borderRadius: 0, borderWidth: 0 },
+          { label: 'Consommation restante', data: remainingByMonth, backgroundColor: '#cbd5e1', borderColor: '#cbd5e1', borderRadius: 0, borderWidth: 0 },
+        ],
       },
-      scales: {
-        x: { stacked: true, grid: { display: false }, ticks: { font: { size: 12 } } },
-        y: { stacked: true, title: { display: true, text: 'kWh', font: { size: 12 } }, grid: { color: 'rgba(0,0,0,.06)' }, ticks: { font: { size: 11 } } },
+      options: {
+        responsive: false,
+        maintainAspectRatio: false,
+        indexAxis: undefined,
+        plugins: {
+          legend: { display: true, position: 'top', labels: { font: { size: 13 }, padding: 14, usePointStyle: false } },
+          tooltip: { mode: 'index', intersect: false, backgroundColor: 'rgba(0,0,0,0.8)', titleFont: { size: 12 }, bodyFont: { size: 11 }, padding: 10, displayColors: true, boxPadding: 4 },
+        },
+        scales: {
+          x: { stacked: true, grid: { display: false }, ticks: { font: { size: 12 } } },
+          y: { stacked: true, title: { display: true, text: 'kWh', font: { size: 12 } }, grid: { color: 'rgba(0,0,0,.06)' }, ticks: { font: { size: 11 } } },
+        },
       },
-    },
-  });
+    });
+  }, 50);
 }
 function setStatus(message, type = '') {
   if (statusTextEl) statusTextEl.textContent = message;
