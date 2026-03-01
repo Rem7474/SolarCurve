@@ -1227,28 +1227,53 @@ async function exportToPDF() {
           const originalCenter = map.getCenter();
           const originalZoom = map.getZoom();
           
-          // Zoom to marker at max level
-          map.setView(marker.getLatLng(), 18, { animate: false });
+          // Zoom to marker at appropriate level
+          map.setView(marker.getLatLng(), 16, { animate: false });
           
           // Force Leaflet to invalidate and redraw all layers including arrows
-          map.invalidateSize();
+          map.invalidateSize(false);
           
-          // Wait for tiles and rendering (increased wait time)
-          await new Promise((r) => setTimeout(r, 1200));
+          // Wait for tiles to load - using a longer timeout with tile load detection
+          let tilesLoaded = false;
+          let tileWaitTime = 0;
           
-          // Capture map with higher quality settings
+          // Try to detect when tiles are loaded
+          const checkTiles = setInterval(() => {
+            const leafletPane = mapEl.querySelector('.leaflet-tile-pane');
+            const tiles = leafletPane?.querySelectorAll('img[src*="tile"]');
+            if (tiles && tiles.length > 0) {
+              // Check if images are loaded
+              const allLoaded = Array.from(tiles).every(img => img.complete && img.naturalHeight !== 0);
+              if (allLoaded) {
+                tilesLoaded = true;
+              }
+            }
+            tileWaitTime += 50;
+            if (tilesLoaded || tileWaitTime > 2000) {
+              clearInterval(checkTiles);
+            }
+          }, 50);
+          
+          // Wait for tiles with maximum 2 second timeout
+          await new Promise((r) => setTimeout(r, 2000));
+          
+          // Extra wait to ensure SVG arrows are rendered
+          await new Promise((r) => setTimeout(r, 300));
+          
+          // Capture map with optimized settings
           const mapCanvas = await html2canvas(mapEl, { 
-            scale: 2, 
+            scale: 1.5,
             useCORS: true, 
             allowTaint: true,
-            backgroundColor: null,
-            logging: false 
+            backgroundColor: '#ffffff',
+            logging: false,
+            proxy: null
           });
-          mapImg = mapCanvas.toDataURL('image/png', 1.0);
+          mapImg = mapCanvas.toDataURL('image/png', 0.95);
           
           // Restore original state
           map.setView(originalCenter, originalZoom, { animate: false });
-          map.invalidateSize();
+          map.invalidateSize(false);
           await new Promise((r) => setTimeout(r, 300));
         }
       } catch (err) {
