@@ -939,10 +939,11 @@ function destinationPoint(lat, lon, bearingDeg, distanceMeters) {
   return { lat: destLat / r, lon: destLon / r };
 }
 
-// ─── PDF Export (Professional Design) ──────────────────────
+// ─── PDF Export (Professional Portrait Design) ────────────
 async function exportToPDF() {
   try {
     const MONTHS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+    const MONTHS_SHORT = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
 
     const primaryMonthly = computeMonthlyTotalsFromDaily(currentPrimaryDailyData);
     const secondaryMonthly = currentSecondaryDailyData.length
@@ -950,9 +951,14 @@ async function exportToPDF() {
       : null;
     const hasSecondary = Boolean(secondaryMonthly);
 
-    // ─── Render bar chart to image ───
+    const totalPrimary = primaryMonthly.reduce((a, b) => a + b, 0);
+    const totalSecondary = hasSecondary ? secondaryMonthly.reduce((a, b) => a + b, 0) : 0;
+    const totalCombined = totalPrimary + totalSecondary;
+    const peakWc = document.getElementById('peakPower').value;
+
+    // ─── Render bar chart image ───
     const barCanvas = document.createElement('canvas');
-    barCanvas.width = 1600;
+    barCanvas.width = 1400;
     barCanvas.height = 700;
     barCanvas.style.display = 'none';
     document.body.appendChild(barCanvas);
@@ -968,26 +974,23 @@ async function exportToPDF() {
 
     const barChart = new Chart(barCanvas.getContext('2d'), {
       type: 'bar',
-      data: { labels: MONTHS, datasets: barDatasets },
+      data: { labels: MONTHS_SHORT, datasets: barDatasets },
       options: {
         responsive: false,
         maintainAspectRatio: false,
-        plugins: {
-          legend: { display: true, position: 'top', labels: { font: { size: 14 }, padding: 16 } },
-        },
+        plugins: { legend: { display: true, position: 'top', labels: { font: { size: 14 }, padding: 14 } } },
         scales: {
-          x: { grid: { display: false }, ticks: { font: { size: 13 } } },
-          y: { title: { display: true, text: 'kWh', font: { size: 13 } }, grid: { color: 'rgba(0,0,0,.06)' }, ticks: { font: { size: 12 } } },
+          x: { grid: { display: false }, ticks: { font: { size: 12 } } },
+          y: { title: { display: true, text: 'kWh', font: { size: 12 } }, grid: { color: 'rgba(0,0,0,.06)' }, ticks: { font: { size: 11 } } },
         },
       },
     });
-
     await new Promise((r) => setTimeout(r, 350));
     const barImg = barCanvas.toDataURL('image/png', 1.0);
     barChart.destroy();
     document.body.removeChild(barCanvas);
 
-    // ─── Render hourly profile charts ───
+    // ─── Render 12 hourly profile chart images (with sum curve) ───
     const chartImages = [];
     for (let m = 1; m <= 12; m++) {
       const pm = buildMonthlyAverageProfile(currentPrimaryHourlyEntries, m);
@@ -996,8 +999,8 @@ async function exportToPDF() {
         : null;
 
       const c = document.createElement('canvas');
-      c.width = 1200;
-      c.height = 600;
+      c.width = 900;
+      c.height = 500;
       c.style.display = 'none';
       document.body.appendChild(c);
 
@@ -1005,7 +1008,10 @@ async function exportToPDF() {
         { label: `Az ${currentPrimaryAzimuth}°`, data: pm, borderColor: '#ef4444', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2 },
       ];
       if (sm) {
-        ds.push({ label: `Az ${currentSecondaryAzimuth}°`, data: sm, borderColor: '#2563eb', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2 });
+        ds.push(
+          { label: `Az ${currentSecondaryAzimuth}°`, data: sm, borderColor: '#2563eb', borderDash: [6, 3], fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.8 },
+          { label: 'Somme', data: sumProfiles(pm, sm), borderColor: '#059669', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2.2 }
+        );
       }
 
       const ch = new Chart(c.getContext('2d'), {
@@ -1014,10 +1020,10 @@ async function exportToPDF() {
         options: {
           responsive: false,
           maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
+          plugins: { legend: { display: hasSecondary, position: 'bottom', labels: { font: { size: 10 }, padding: 8, usePointStyle: true } } },
           scales: {
-            x: { grid: { display: false }, ticks: { font: { size: 11 } } },
-            y: { title: { display: true, text: 'kWh', font: { size: 11 } }, grid: { color: 'rgba(0,0,0,.04)' }, ticks: { font: { size: 10 } } },
+            x: { grid: { display: false }, ticks: { font: { size: 9 } } },
+            y: { title: { display: true, text: 'kWh', font: { size: 9 } }, grid: { color: 'rgba(0,0,0,.04)' }, ticks: { font: { size: 9 } } },
           },
         },
       });
@@ -1028,212 +1034,311 @@ async function exportToPDF() {
       document.body.removeChild(c);
     }
 
-    // ─── Build PDF ───
+    // ─── Build PDF (A4 portrait) ───
     const jsPDFGlobal = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF || (window.jspdf || null);
     if (!jsPDFGlobal) throw new Error('jsPDF introuvable.');
     const DocC = typeof jsPDFGlobal === 'function' ? jsPDFGlobal : jsPDFGlobal.jsPDF || jsPDFGlobal;
-    const doc = new DocC({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-    const W = doc.internal.pageSize.getWidth();
-    const H = doc.internal.pageSize.getHeight();
-    const M = 14;
+    const doc = new DocC({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const W = doc.internal.pageSize.getWidth();  // 210
+    const H = doc.internal.pageSize.getHeight(); // 297
+    const M = 15; // margin
+    const contentW = W - M * 2;
     let y;
+    let pageNum = 0;
 
-    const totalPrimary = primaryMonthly.reduce((a, b) => a + b, 0);
-    const totalSecondary = hasSecondary ? secondaryMonthly.reduce((a, b) => a + b, 0) : 0;
-    const totalCombined = totalPrimary + totalSecondary;
-
-    // ─────── Page 1: Overview ───────
-    // Header gradient
+    // ─────────────────── Page 1: Synthèse ───────────────────
+    pageNum++;
+    // Header banner
     doc.setFillColor(15, 23, 42);
-    doc.rect(0, 0, W, 32, 'F');
-    // Amber accent line
+    doc.rect(0, 0, W, 36, 'F');
     doc.setFillColor(245, 158, 11);
-    doc.rect(0, 32, W, 2, 'F');
+    doc.rect(0, 36, W, 2.5, 'F');
 
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(22);
-    doc.text('SolarCurve', M, 16);
-    doc.setFontSize(11);
+    doc.setTextColor(245, 158, 11);
+    doc.setFontSize(24);
+    doc.text('SolarCurve', M, 17);
+    doc.setFontSize(10);
     doc.setTextColor(148, 163, 184);
-    doc.text('Rapport d\'estimation de production photovoltaïque', M, 24);
-    doc.setFontSize(9);
+    doc.text('Rapport de production photovoltaïque estimée', M, 26);
+    doc.setFontSize(8);
     doc.setTextColor(200, 200, 200);
-    doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`, W - M, 24, { align: 'right' });
+    doc.text(`${new Date().toLocaleDateString('fr-FR')} · ${new Date().toLocaleTimeString('fr-FR')}`, W - M, 26, { align: 'right' });
 
-    y = 42;
+    y = 46;
 
-    // Parameters card
+    // ── Parameters section ──
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text('Paramètres de l\'installation', M, y);
+    y += 5;
+
     doc.setFillColor(248, 250, 252);
     doc.setDrawColor(226, 232, 240);
-    const paramCardH = 20;
-    doc.roundedRect(M, y, W - M * 2, paramCardH, 3, 3, 'FD');
-    doc.setTextColor(30, 41, 59);
+    const pCardH = hasSecondary ? 32 : 26;
+    doc.roundedRect(M, y, contentW, pCardH, 3, 3, 'FD');
+
+    doc.setFontSize(8.5);
+    const pX = M + 5;
+    const pCol2 = M + contentW / 2;
+    const pY1 = y + 7;
+    const pY2 = y + 15;
+    const pY3 = y + 23;
+
+    doc.setTextColor(100, 116, 139);
+    doc.text('Position', pX, pY1);
+    doc.text('Puissance crête', pCol2, pY1);
+    doc.text('Inclinaison', pX, pY2);
+    doc.text('Pertes', pCol2, pY2);
+
+    doc.setTextColor(15, 23, 42);
     doc.setFontSize(9);
+    doc.text(`${latInput.value || '-'}, ${lonInput.value || '-'}`, pX + 28, pY1);
+    doc.text(`${peakWc} Wc (${(Number(peakWc)/1000).toFixed(2)} kWc)`, pCol2 + 32, pY1);
+    doc.text(`${document.getElementById('tilt').value}°`, pX + 28, pY2);
+    doc.text(`${document.getElementById('losses').value} %`, pCol2 + 32, pY2);
 
-    const paramCols = [];
-    paramCols.push(`Position : ${latInput.value || '-'}, ${lonInput.value || '-'}`);
-    paramCols.push(`Puissance : ${document.getElementById('peakPower').value} Wc`);
-    paramCols.push(`Inclinaison : ${document.getElementById('tilt').value}°`);
-    paramCols.push(`Azimut 1 : ${currentPrimaryAzimuth ?? azimuthInput.value}°`);
-    if (hasSecondary) paramCols.push(`Azimut 2 : ${currentSecondaryAzimuth}°`);
-    paramCols.push(`Pertes : ${document.getElementById('losses').value}%`);
-
-    const paramText = paramCols.join('   ·   ');
-    doc.text(paramText, M + 6, y + 12);
-    y += paramCardH + 6;
-
-    // Bar chart
-    const imgW = W - M * 2;
-    let imgH = imgW * (700 / 1600);
-    const maxImgH = H - y - 50 - M;
-    if (imgH > maxImgH) imgH = Math.max(40, maxImgH);
-    doc.addImage(barImg, 'PNG', M, y, imgW, imgH);
-    y += imgH + 6;
-
-    // Annual summary boxes
-    const boxW = hasSecondary ? (W - M * 2 - 8) / 3 : (W - M * 2);
-    const boxH = 14;
-    const boxColors = [[239, 68, 68], [37, 99, 235], [5, 150, 105]];
-    const summaryItems = [];
-    summaryItems.push({ label: `Total az. ${currentPrimaryAzimuth}°`, value: `${totalPrimary.toFixed(1)} kWh`, color: boxColors[0] });
     if (hasSecondary) {
-      summaryItems.push({ label: `Total az. ${currentSecondaryAzimuth}°`, value: `${totalSecondary.toFixed(1)} kWh`, color: boxColors[1] });
-      summaryItems.push({ label: 'Total combiné', value: `${totalCombined.toFixed(1)} kWh`, color: boxColors[2] });
+      doc.setTextColor(100, 116, 139);
+      doc.setFontSize(8.5);
+      doc.text('Azimut 1', pX, pY3);
+      doc.text('Azimut 2', pCol2, pY3);
+      doc.setTextColor(15, 23, 42);
+      doc.setFontSize(9);
+      doc.text(`${currentPrimaryAzimuth}°`, pX + 28, pY3);
+      doc.text(`${currentSecondaryAzimuth}°`, pCol2 + 32, pY3);
+    } else {
+      doc.setTextColor(100, 116, 139);
+      doc.setFontSize(8.5);
+      doc.text('Azimut', pX, pY3 - 8);
+      doc.setTextColor(15, 23, 42);
+      doc.setFontSize(9);
+      doc.text(`${currentPrimaryAzimuth ?? azimuthInput.value}°`, pX + 28, pY3 - 8);
     }
 
-    for (let i = 0; i < summaryItems.length; i++) {
-      const bx = M + i * (boxW + 4);
-      const item = summaryItems[i];
+    y += pCardH + 8;
+
+    // ── Summary boxes ──
+    const boxCount = hasSecondary ? 3 : 1;
+    const boxGap = 5;
+    const boxW = (contentW - boxGap * (boxCount - 1)) / boxCount;
+    const boxH = 20;
+    const boxItems = [
+      { label: hasSecondary ? `TOTAL AZ. ${currentPrimaryAzimuth}°` : 'TOTAL ANNUEL', value: `${totalPrimary.toFixed(1)} kWh`, accent: [239, 68, 68] },
+    ];
+    if (hasSecondary) {
+      boxItems.push(
+        { label: `TOTAL AZ. ${currentSecondaryAzimuth}°`, value: `${totalSecondary.toFixed(1)} kWh`, accent: [37, 99, 235] },
+        { label: 'TOTAL COMBINÉ', value: `${totalCombined.toFixed(1)} kWh`, accent: [5, 150, 105] }
+      );
+    }
+
+    for (let i = 0; i < boxItems.length; i++) {
+      const bx = M + i * (boxW + boxGap);
+      const item = boxItems[i];
       doc.setFillColor(248, 250, 252);
       doc.setDrawColor(226, 232, 240);
       doc.roundedRect(bx, y, boxW, boxH, 2, 2, 'FD');
-      // Color accent top
-      doc.setFillColor(item.color[0], item.color[1], item.color[2]);
-      doc.rect(bx, y, boxW, 1.8, 'F');
-      // Text
-      doc.setFontSize(8);
+      doc.setFillColor(item.accent[0], item.accent[1], item.accent[2]);
+      doc.rect(bx, y, boxW, 2.5, 'F');
+      doc.setFontSize(7.5);
       doc.setTextColor(100, 116, 139);
-      doc.text(item.label.toUpperCase(), bx + 4, y + 6);
-      doc.setFontSize(12);
+      doc.text(item.label, bx + 4, y + 9);
+      doc.setFontSize(13);
       doc.setTextColor(15, 23, 42);
-      doc.text(item.value, bx + 4, y + 12);
+      doc.text(item.value, bx + 4, y + 17);
     }
 
     if (hasSecondary) {
-      y += boxH + 2;
+      y += boxH + 3;
       const pct1 = totalCombined > 0 ? (totalPrimary / totalCombined * 100) : 0;
       const pct2 = totalCombined > 0 ? (totalSecondary / totalCombined * 100) : 0;
       doc.setFontSize(8);
       doc.setTextColor(100, 116, 139);
-      doc.text(`Répartition : ${pct1.toFixed(1)}% (az. ${currentPrimaryAzimuth}°) / ${pct2.toFixed(1)}% (az. ${currentSecondaryAzimuth}°)`, M, y + 4);
+      doc.text(`Répartition : ${pct1.toFixed(1)}% (az. ${currentPrimaryAzimuth}°) / ${pct2.toFixed(1)}% (az. ${currentSecondaryAzimuth}°)`, M, y + 3);
+      y += 8;
+    } else {
+      y += boxH + 6;
     }
 
-    // Footer page 1
-    pdfFooter(doc, W, H, M, 1);
+    // ── Bar chart ──
+    const chartImgW = contentW;
+    let chartImgH = chartImgW * (700 / 1400);
+    const maxChartH = H - y - 18;
+    if (chartImgH > maxChartH) chartImgH = Math.max(50, maxChartH);
+    doc.addImage(barImg, 'PNG', M, y, chartImgW, chartImgH);
 
-    // ─────── Page 2: Monthly Table ───────
+    pdfFooter(doc, W, H, M, pageNum);
+
+    // ─────────────────── Page 2: Tableau mensuel ───────────────────
     doc.addPage();
+    pageNum++;
     pdfPageHeader(doc, W, M, 'Détail mensuel de la production');
-    y = 38;
+    y = 44;
 
+    // Compute column widths based on content type
     const colCount = hasSecondary ? 4 : 2;
-    const tableW = W - M * 2;
-    const colW = tableW / colCount;
-    const rowH = 9;
-    const headerH = 10;
+    // Give "Mois" a fixed smaller width ; distribute rest equally
+    const monthColW = 36;
+    const dataColW = (contentW - monthColW) / (colCount - 1);
+    const colWidths = [monthColW];
+    for (let c = 1; c < colCount; c++) colWidths.push(dataColW);
 
-    // Table header
-    doc.setFillColor(15, 23, 42);
-    const headers = ['Mois', `Production (${currentPrimaryAzimuth}°) kWh`];
-    if (hasSecondary) headers.push(`Production (${currentSecondaryAzimuth}°) kWh`, 'Total kWh');
+    const headerH = 12;
+    const rowH = 10;
 
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(9);
-    for (let i = 0; i < headers.length; i++) {
-      doc.rect(M + i * colW, y, colW, headerH, 'F');
-      doc.text(headers[i], M + i * colW + 4, y + 7);
+    // Define header labels
+    const tblHeaders = ['Mois', `Az. ${currentPrimaryAzimuth}° (kWh)`];
+    if (hasSecondary) tblHeaders.push(`Az. ${currentSecondaryAzimuth}° (kWh)`, 'Total (kWh)');
+
+    // Draw table header
+    let xCursor = M;
+    for (let c = 0; c < colCount; c++) {
+      const cw = colWidths[c];
+      // Header fill
+      doc.setFillColor(15, 23, 42);
+      doc.rect(xCursor, y, cw, headerH, 'F');
+      // Header text — always white
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(9);
+      if (c === 0) {
+        doc.text(tblHeaders[c], xCursor + 4, y + 8);
+      } else {
+        // Right-align data headers
+        doc.text(tblHeaders[c], xCursor + cw - 4, y + 8, { align: 'right' });
+      }
+      xCursor += cw;
     }
     y += headerH;
 
-    // Table rows
-    let totalRowPrimary = 0, totalRowSecondary = 0;
+    // Draw data rows
+    let tRowPrim = 0;
+    let tRowSec = 0;
 
     for (let i = 0; i < 12; i++) {
-      const isEven = i % 2 === 0;
-      if (isEven) { doc.setFillColor(248, 250, 252); } else { doc.setFillColor(255, 255, 255); }
-      doc.setDrawColor(226, 232, 240);
-
+      const stripe = i % 2 === 0;
       const a1 = primaryMonthly[i] || 0;
       const a2 = hasSecondary ? (secondaryMonthly[i] || 0) : 0;
-      totalRowPrimary += a1;
-      totalRowSecondary += a2;
+      tRowPrim += a1;
+      tRowSec += a2;
 
+      xCursor = M;
       for (let c = 0; c < colCount; c++) {
-        doc.rect(M + c * colW, y, colW, rowH, 'FD');
+        const cw = colWidths[c];
+        doc.setFillColor(stripe ? 248 : 255, stripe ? 250 : 255, stripe ? 252 : 255);
+        doc.setDrawColor(226, 232, 240);
+        doc.rect(xCursor, y, cw, rowH, 'FD');
+        xCursor += cw;
       }
 
+      xCursor = M;
       doc.setTextColor(30, 41, 59);
       doc.setFontSize(9);
-      doc.text(MONTHS[i], M + 4, y + 6.5);
-      doc.text(a1.toFixed(1), M + colW + colW - 6, y + 6.5, { align: 'right' });
-
+      doc.text(MONTHS[i], xCursor + 4, y + 7);
+      xCursor += colWidths[0];
+      doc.text(a1.toFixed(1), xCursor + colWidths[1] - 6, y + 7, { align: 'right' });
       if (hasSecondary) {
-        doc.text(a2.toFixed(1), M + 2 * colW + colW - 6, y + 6.5, { align: 'right' });
-        doc.text((a1 + a2).toFixed(1), M + 3 * colW + colW - 6, y + 6.5, { align: 'right' });
+        xCursor += colWidths[1];
+        doc.text(a2.toFixed(1), xCursor + colWidths[2] - 6, y + 7, { align: 'right' });
+        xCursor += colWidths[2];
+        doc.text((a1 + a2).toFixed(1), xCursor + colWidths[3] - 6, y + 7, { align: 'right' });
       }
-
       y += rowH;
     }
 
     // Total row
-    doc.setFillColor(245, 158, 11);
+    xCursor = M;
     for (let c = 0; c < colCount; c++) {
-      doc.rect(M + c * colW, y, colW, headerH, 'F');
+      const cw = colWidths[c];
+      doc.setFillColor(245, 158, 11);
+      doc.rect(xCursor, y, cw, headerH, 'F');
+      xCursor += cw;
     }
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(10);
-    doc.text('TOTAL ANNUEL', M + 4, y + 7);
-    doc.text(totalRowPrimary.toFixed(1), M + colW + colW - 6, y + 7, { align: 'right' });
+    xCursor = M;
+    doc.text('TOTAL', xCursor + 4, y + 8);
+    xCursor += colWidths[0];
+    doc.text(tRowPrim.toFixed(1), xCursor + colWidths[1] - 6, y + 8, { align: 'right' });
     if (hasSecondary) {
-      doc.text(totalRowSecondary.toFixed(1), M + 2 * colW + colW - 6, y + 7, { align: 'right' });
-      doc.text((totalRowPrimary + totalRowSecondary).toFixed(1), M + 3 * colW + colW - 6, y + 7, { align: 'right' });
+      xCursor += colWidths[1];
+      doc.text(tRowSec.toFixed(1), xCursor + colWidths[2] - 6, y + 8, { align: 'right' });
+      xCursor += colWidths[2];
+      doc.text((tRowPrim + tRowSec).toFixed(1), xCursor + colWidths[3] - 6, y + 8, { align: 'right' });
     }
 
-    pdfFooter(doc, W, H, M, 2);
-
-    // ─────── Page 3: Hourly Profile Charts ───────
-    doc.addPage();
-    pdfPageHeader(doc, W, M, 'Profils horaires mensuels moyens');
-
-    const chartCols = 3;
-    const chartRows = 4;
-    const gap = 6;
-    const topY = 40;
-    const avW = (W - M * 2 - gap * (chartCols - 1)) / chartCols;
-    const avH = (H - topY - M - 16 - gap * (chartRows - 1)) / chartRows;
-
-    for (let idx = 0; idx < chartImages.length; idx++) {
-      const col = idx % chartCols;
-      const row = Math.floor(idx / chartCols);
-      const cx = M + col * (avW + gap);
-      const cy = topY + row * (avH + gap);
-
-      // Month label background
-      doc.setFillColor(248, 250, 252);
-      doc.setDrawColor(226, 232, 240);
-      doc.roundedRect(cx, cy, avW, avH, 2, 2, 'FD');
-
-      // Month name
+    // Ratio bar (visual) if secondary
+    if (hasSecondary) {
+      y += headerH + 12;
+      doc.setFontSize(9);
+      doc.setTextColor(30, 41, 59);
+      doc.text('Répartition de la production', M, y);
+      y += 4;
+      const barH = 8;
+      const pct1 = totalCombined > 0 ? totalPrimary / totalCombined : 0.5;
+      // Primary portion
+      doc.setFillColor(239, 68, 68);
+      doc.roundedRect(M, y, contentW * pct1, barH, 2, 2, 'F');
+      // Secondary portion
+      doc.setFillColor(37, 99, 235);
+      doc.roundedRect(M + contentW * pct1, y, contentW * (1 - pct1), barH, 2, 2, 'F');
+      // Labels
+      y += barH + 5;
       doc.setFontSize(8);
-      doc.setTextColor(100, 116, 139);
-      const mName = MONTHS[chartImages[idx].month - 1];
-      doc.text(mName, cx + 3, cy + 5);
-
-      // Chart image
-      doc.addImage(chartImages[idx].src, 'PNG', cx + 1, cy + 7, avW - 2, avH - 9);
+      doc.setTextColor(239, 68, 68);
+      doc.text(`Az. ${currentPrimaryAzimuth}° : ${(pct1 * 100).toFixed(1)}%`, M, y);
+      doc.setTextColor(37, 99, 235);
+      doc.text(`Az. ${currentSecondaryAzimuth}° : ${((1 - pct1) * 100).toFixed(1)}%`, W - M, y, { align: 'right' });
     }
 
-    pdfFooter(doc, W, H, M, 3);
+    pdfFooter(doc, W, H, M, pageNum);
+
+    // ─────────────────── Pages 3-4: Profils horaires (6 par page) ───────────────────
+    const chartsPerPage = 6;
+    const gridCols = 2;
+    const gridRows = 3;
+    const gridGap = 6;
+
+    for (let page = 0; page < 2; page++) {
+      doc.addPage();
+      pageNum++;
+      const pageTitle = page === 0
+        ? 'Profils horaires moyens (Jan – Jun)'
+        : 'Profils horaires moyens (Jul – Déc)';
+      pdfPageHeader(doc, W, M, pageTitle);
+
+      const topY = 44;
+      const gridAvailW = contentW;
+      const gridAvailH = H - topY - 18;
+      const cellW = (gridAvailW - gridGap * (gridCols - 1)) / gridCols;
+      const cellH = (gridAvailH - gridGap * (gridRows - 1)) / gridRows;
+
+      for (let idx = 0; idx < chartsPerPage; idx++) {
+        const globalIdx = page * chartsPerPage + idx;
+        if (globalIdx >= chartImages.length) break;
+
+        const col = idx % gridCols;
+        const row = Math.floor(idx / gridCols);
+        const cx = M + col * (cellW + gridGap);
+        const cy = topY + row * (cellH + gridGap);
+
+        // Cell background
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(cx, cy, cellW, cellH, 2, 2, 'FD');
+
+        // Month title
+        doc.setFontSize(9);
+        doc.setTextColor(15, 23, 42);
+        doc.text(MONTHS[chartImages[globalIdx].month - 1], cx + 4, cy + 6);
+
+        // Chart image
+        const imgPad = 2;
+        const titleH = 8;
+        doc.addImage(chartImages[globalIdx].src, 'PNG', cx + imgPad, cy + titleH, cellW - imgPad * 2, cellH - titleH - 2);
+      }
+
+      pdfFooter(doc, W, H, M, pageNum);
+    }
 
     // Save
     doc.save(`SolarCurve_rapport_${new Date().toISOString().slice(0, 10)}.pdf`);
@@ -1246,19 +1351,22 @@ async function exportToPDF() {
 
 function pdfPageHeader(doc, W, M, title) {
   doc.setFillColor(15, 23, 42);
-  doc.rect(0, 0, W, 28, 'F');
+  doc.rect(0, 0, W, 30, 'F');
   doc.setFillColor(245, 158, 11);
-  doc.rect(0, 28, W, 1.5, 'F');
+  doc.rect(0, 30, W, 2, 'F');
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(16);
-  doc.text(title, M, 18);
+  doc.setFontSize(14);
+  doc.text(title, M, 19);
 }
 
 function pdfFooter(doc, W, H, M, pageNum) {
-  doc.setFontSize(8);
+  // Separator line
+  doc.setDrawColor(226, 232, 240);
+  doc.line(M, H - 12, W - M, H - 12);
+  doc.setFontSize(7);
   doc.setTextColor(148, 163, 184);
-  doc.text('SolarCurve — Données fournies à titre indicatif', M, H - 6);
-  doc.text(`Page ${pageNum}`, W - M, H - 6, { align: 'right' });
+  doc.text('SolarCurve — Données fournies à titre indicatif', M, H - 7);
+  doc.text(`Page ${pageNum}`, W - M, H - 7, { align: 'right' });
 }
 
 // ─── Init ──────────────────────────────────────────────────
