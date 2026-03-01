@@ -146,7 +146,17 @@ if (nextDayBtn) {
 }
 
 if (exportPdfBtn) {
-  exportPdfBtn.addEventListener('click', () => exportToPDF());
+  exportPdfBtn.addEventListener('click', async () => {
+    exportPdfBtn.disabled = true;
+    const originalHTML = exportPdfBtn.innerHTML;
+    exportPdfBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline; animation:spin 1s linear infinite; margin-right:6px;"><circle cx="12" cy="12" r="10"/><path d="M8 12a4 4 0 1 0 8 0"/></svg> Export…';
+    try {
+      await exportToPDF();
+    } finally {
+      exportPdfBtn.disabled = false;
+      exportPdfBtn.innerHTML = originalHTML;
+    }
+  });
 }
 
 // ─── Form Submit ───────────────────────────────────────────
@@ -1233,41 +1243,29 @@ async function exportToPDF() {
           // Force Leaflet to invalidate and redraw all layers including arrows
           map.invalidateSize(false);
           
-          // Wait for tiles to load - using a longer timeout with tile load detection
-          let tilesLoaded = false;
-          let tileWaitTime = 0;
+          // Wait longer for SVG rendering
+          await new Promise((r) => setTimeout(r, 1500));
           
-          // Try to detect when tiles are loaded
-          const checkTiles = setInterval(() => {
-            const leafletPane = mapEl.querySelector('.leaflet-tile-pane');
-            const tiles = leafletPane?.querySelectorAll('img[src*="tile"]');
-            if (tiles && tiles.length > 0) {
-              // Check if images are loaded
-              const allLoaded = Array.from(tiles).every(img => img.complete && img.naturalHeight !== 0);
-              if (allLoaded) {
-                tilesLoaded = true;
-              }
-            }
-            tileWaitTime += 50;
-            if (tilesLoaded || tileWaitTime > 2000) {
-              clearInterval(checkTiles);
-            }
-          }, 50);
+          // Verify SVG layers are in DOM
+          const svgLayers = mapEl.querySelectorAll('svg path');
+          if (svgLayers.length === 0) {
+            // SVG not yet rendered, wait more
+            await new Promise((r) => setTimeout(r, 500));
+          }
           
-          // Wait for tiles with maximum 2 second timeout
-          await new Promise((r) => setTimeout(r, 2000));
+          // One more refresh to ensure everything is rendered
+          map.invalidateSize(false);
+          await new Promise((r) => setTimeout(r, 200));
           
-          // Extra wait to ensure SVG arrows are rendered
-          await new Promise((r) => setTimeout(r, 300));
-          
-          // Capture map with optimized settings
+          // Capture map with stable settings
           const mapCanvas = await html2canvas(mapEl, { 
             scale: 1.5,
             useCORS: true, 
             allowTaint: true,
-            backgroundColor: '#ffffff',
+            backgroundColor: '#e8f5e9',
             logging: false,
-            proxy: null
+            proxy: null,
+            imageTimeout: 3000
           });
           mapImg = mapCanvas.toDataURL('image/png', 0.95);
           
