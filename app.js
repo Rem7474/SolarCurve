@@ -1159,59 +1159,121 @@ async function captureMapForPDF() {
     // Force overlay repositioning after zoom/pan
     updateAzimuthArrowFromInputs();
     
-    // Wait much longer for polylines to reposition correctly
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // Wait for tiles and overlays to stabilize
+    await new Promise((resolve) => setTimeout(resolve, 800));
     await waitForMapTiles(mapElement, 4000);
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    
-    // Force one more reposition to be sure
-    map.invalidateSize();
-    updateAzimuthArrowFromInputs();
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 400));
 
-    // Temporarily disable 3D transforms on all Leaflet panes in the REAL DOM
-    // This allows html2canvas to capture overlays at their visual position
-    const mapContainer = mapElement.querySelector('.leaflet-map-pane');
-    const allPanes = mapContainer ? mapContainer.querySelectorAll('.leaflet-pane') : [];
-    const savedStyles = [];
-    
-    allPanes.forEach((pane) => {
-      const computedTransform = window.getComputedStyle(pane).transform;
-      savedStyles.push({
-        element: pane,
-        originalTransform: pane.style.transform,
-        computedTransform: computedTransform,
-      });
-      
-      // Apply the computed transform as a static style (removes translate3d)
-      if (computedTransform && computedTransform !== 'none') {
-        pane.style.transform = computedTransform;
-        pane.style.willChange = 'auto';
-      }
-    });
-    
-    // Force browser reflow
-    mapElement.offsetHeight;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    // Capture everything including the now-statically-positioned overlays
+    // Capture ONLY the base map tiles (exclude overlays that use CSS transforms)
     const canvas = await html2canvas(mapElement, {
       scale: 2,
       useCORS: true,
       allowTaint: false,
       backgroundColor: '#ffffff',
       logging: false,
+      ignoreElements: (el) => {
+        // Exclude all Leaflet overlay elements
+        if (!el.classList) return false;
+        return el.classList.contains('leaflet-marker-pane') || 
+               el.classList.contains('leaflet-overlay-pane') ||
+               el.classList.contains('leaflet-shadow-pane') ||
+               el.classList.contains('az-handle-icon');
+      },
     });
 
-    // Restore original transforms
-    savedStyles.forEach(({ element, originalTransform }) => {
-      element.style.transform = originalTransform;
-      element.style.willChange = '';
-    });
+    // Now manually redraw markers and arrows on the captured canvas
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return canvas.toDataURL('image/png', 0.95);
     
-    // Force overlays to reposition properly after restore
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    updateAzimuthArrowFromInputs();
+    const scale = 2; // html2canvas scale
+    
+    // Get map container offset for coordinate conversion
+    const mapRect = mapElement.getBoundingClientRect();
+    
+    // Helper: Convert lat/lng to canvas pixel coordinates
+    const latLngToCanvasPixel = (latLng) => {
+      const point = map.latLngToContainerPoint(latLng);
+      return {
+        x: point.x * scale,
+        y: point.y * scale,
+      };
+    };
+    
+    // Draw marker (orange circle)
+    if (marker) {
+      try {
+        const pos = marker.getLatLng();
+        const canvasPoint = latLngToCanvasPixel(pos);
+        
+        // Draw circle with shadow
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+        ctx.shadowBlur = 4 * scale;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 1 * scale;
+        
+        ctx.beginPath();
+        ctx.arc(canvasPoint.x, canvasPoint.y, 8 * scale, 0, 2 * Math.PI);
+        ctx.fillStyle = '#f59e0b';
+        ctx.fill();
+        
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.lineWidth = 2 * scale;
+        ctx.strokeStyle = '#ffffff';
+        ctx.stroke();
+        ctx.restore();
+      } catch (e) {
+        console.error('Failed to draw marker:', e);
+      }
+    }
+    
+    // Helper: Draw an arrow polyline
+    const drawArrowPolyline = (polylineLayer, color) => {
+      if (!polylineLayer) return;
+      
+      try {
+        const latLngs = polylineLayer.getLatLngs();
+        if (!latLngs || latLngs.length < 2) return;
+        
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 4.5 * scale;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.globalAlpha = 0.92;
+        
+        ctx.beginPath();
+        const firstPoint = latLngToCanvasPixel(latLngs[0]);
+        ctx.moveTo(firstPoint.x, firstPoint.y);
+        
+        for (let i = 1; i < latLngs.length; i++) {
+          const point = latLngToCanvasPixel(latLngs[i]);
+          ctx.lineTo(point.x, point.y);
+        }
+        
+        ctx.stroke();
+        ctx.restore();
+      } catch (e) {
+        console.error('Failed to draw arrow polyline:', e);
+      }
+    };
+    
+    // Draw primary azimuth arrow (red) - shaft and head
+    if (azimuthShaft) {
+      drawArrowPolyline(azimuthShaft, '#ef4444');
+    }
+    if (azimuthHead) {
+      drawArrowPolyline(azimuthHead, '#ef4444');
+    }
+    
+    // Draw secondary azimuth arrow (blue) - shaft and head
+    if (azimuthSecondaryShaft) {
+      drawArrowPolyline(azimuthSecondaryShaft, '#2563eb');
+    }
+    if (azimuthSecondaryHead) {
+      drawArrowPolyline(azimuthSecondaryHead, '#2563eb');
+    }
 
     return canvas.toDataURL('image/png', 0.95);
   } catch (err) {
