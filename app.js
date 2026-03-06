@@ -1152,16 +1152,22 @@ async function captureMapForPDF() {
       map.setZoom(targetZoom, { animate: false });
     }
     
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, 300));
     map.invalidateSize();
+    await new Promise((resolve) => setTimeout(resolve, 100));
     
     // Force overlay repositioning after zoom/pan
     updateAzimuthArrowFromInputs();
     
-    // Wait for tiles and overlays to stabilize
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    // Wait much longer for polylines to reposition correctly
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     await waitForMapTiles(mapElement, 4000);
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    
+    // Force one more reposition to be sure
+    map.invalidateSize();
+    updateAzimuthArrowFromInputs();
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     // Temporarily disable 3D transforms on all Leaflet panes in the REAL DOM
     // This allows html2canvas to capture overlays at their visual position
