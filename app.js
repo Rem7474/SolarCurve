@@ -1152,7 +1152,6 @@ async function captureMapForPDF() {
       map.setZoom(targetZoom, { animate: false });
     }
     
-    // Wait for map to settle
     await new Promise((resolve) => setTimeout(resolve, 500));
     map.invalidateSize();
     await new Promise((resolve) => setTimeout(resolve, 200));
@@ -1160,28 +1159,112 @@ async function captureMapForPDF() {
     // Force overlay repositioning
     updateAzimuthArrowFromInputs();
     
-    // Wait longer for everything (tiles, SVG overlays, markers) to stabilize
-    await new Promise((resolve) => setTimeout(resolve, 1200));
+    // Wait for tiles
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     await waitForMapTiles(mapElement, 5000);
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
-    // Try capturing everything as-is with html2canvas
-    const canvas = await html2canvas(mapElement, {
+    // Capture base map only (tiles)
+    const baseCanvas = await html2canvas(mapElement, {
       scale: 2,
       useCORS: true,
-      allowTaint: true, // Allow to capture everything
-      foreignObjectRendering: true, // Better SVG support
+      allowTaint: false,
       backgroundColor: '#ffffff',
-      logging: true, // Enable logging to see what's happening
-      width: mapElement.offsetWidth,
-      height: mapElement.offsetHeight,
-      x: 0,
-      y: 0,
-      scrollX: 0,
-      scrollY: 0,
+      logging: false,
+      ignoreElements: (el) => {
+        // Exclude all Leaflet overlay elements
+        if (!el.classList) return false;
+        return el.classList.contains('leaflet-overlay-pane') || 
+               el.classList.contains('leaflet-marker-pane') ||
+               el.classList.contains('leaflet-shadow-pane') ||
+               el.classList.contains('leaflet-popup-pane') ||
+               el.classList.contains('leaflet-tooltip-pane');
+      },
     });
 
-    return canvas.toDataURL('image/png', 0.95);
+    const ctx = baseCanvas.getContext('2d');
+    if (!ctx) return baseCanvas.toDataURL('image/png', 0.95);
+    
+    const scale = 2;
+    
+    // Helper function to draw arrow on canvas
+    const drawArrow = (polylineShaft, polylineHead, color, width) => {
+      if (!polylineShaft || !polylineHead) return;
+      
+      try {
+        const shaftLatLngs = polylineShaft.getLatLngs();
+        const headLatLngs = polylineHead.getLatLngs();
+        
+        if (shaftLatLngs.length < 2 || headLatLngs.length < 2) return;
+        
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width * scale;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        
+        // Draw shaft
+        ctx.beginPath();
+        const shaftStart = map.latLngToContainerPoint(shaftLatLngs[0]);
+        ctx.moveTo(shaftStart.x * scale, shaftStart.y * scale);
+        for (let i = 1; i < shaftLatLngs.length; i++) {
+          const pt = map.latLngToContainerPoint(shaftLatLngs[i]);
+          ctx.lineTo(pt.x * scale, pt.y * scale);
+        }
+        ctx.stroke();
+        
+        // Draw head (arrowhead)
+        ctx.beginPath();
+        const headStart = map.latLngToContainerPoint(headLatLngs[0]);
+        ctx.moveTo(headStart.x * scale, headStart.y * scale);
+        for (let i = 1; i < headLatLngs.length; i++) {
+          const pt = map.latLngToContainerPoint(headLatLngs[i]);
+          ctx.lineTo(pt.x * scale, pt.y * scale);
+        }
+        ctx.stroke();
+      } catch (e) {
+        console.error('Failed to draw arrow:', e);
+      }
+    };
+    
+    // Draw primary azimuth arrow (red)
+    if (azimuthShaft && azimuthHead) {
+      drawArrow(azimuthShaft, azimuthHead, chartColors.red, 3);
+    }
+    
+    // Draw secondary azimuth arrow (blue) if exists
+    if (azimuthSecondaryShaft && azimuthSecondaryHead) {
+      drawArrow(azimuthSecondaryShaft, azimuthSecondaryHead, chartColors.blue, 3);
+    }
+    
+    // Draw marker
+    if (marker) {
+      try {
+        const pos = marker.getLatLng();
+        const point = map.latLngToContainerPoint(pos);
+        const canvasX = point.x * scale;
+        const canvasY = point.y * scale;
+        
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+        ctx.shadowBlur = 4 * scale;
+        ctx.shadowOffsetY = 1 * scale;
+        
+        ctx.beginPath();
+        ctx.arc(canvasX, canvasY, 8 * scale, 0, 2 * Math.PI);
+        ctx.fillStyle = '#f59e0b';
+        ctx.fill();
+        
+        ctx.shadowColor = 'transparent';
+        ctx.lineWidth = 2 * scale;
+        ctx.strokeStyle = '#ffffff';
+        ctx.stroke();
+        ctx.restore();
+      } catch (e) {
+        console.error('Failed to draw marker:', e);
+      }
+    }
+
+    return baseCanvas.toDataURL('image/png', 0.95);
   } catch (err) {
     console.error('Map capture error:', err);
     return null;
