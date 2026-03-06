@@ -1142,52 +1142,124 @@ async function captureMapForPDF() {
   if (!mapElement) return null;
 
   const originalZoom = map.getZoom();
-  const targetZoom = Math.max(originalZoom, 16);
+  const originalCenter = map.getCenter();
+  const targetZoom = 16;
 
   try {
-    // Prepare map for capture
-    if (targetZoom !== originalZoom) {
+    // Center map on marker position
+    if (marker) {
+      const markerPos = marker.getLatLng();
+      map.setView(markerPos, targetZoom, { animate: false });
+    } else {
       map.setZoom(targetZoom, { animate: false });
-      await new Promise((resolve) => setTimeout(resolve, 100));
     }
     
+    await new Promise((resolve) => setTimeout(resolve, 150));
     map.invalidateSize();
     
-    // Force overlay repositioning after zoom change
+    // Force overlay repositioning after zoom/pan
     updateAzimuthArrowFromInputs();
     
-    // Wait for tiles and overlays to settle
+    // Wait for tiles to load
     await new Promise((resolve) => setTimeout(resolve, 400));
     await waitForMapTiles(mapElement);
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, 300));
 
+    // Capture base map with html2canvas
     const canvas = await html2canvas(mapElement, {
       scale: 2,
       useCORS: true,
       allowTaint: false,
       backgroundColor: '#ffffff',
       logging: false,
-      onclone: (clonedDoc) => {
-        // Ensure all Leaflet panes are visible in the clone
-        const clonedMap = clonedDoc.getElementById('map');
-        if (clonedMap) {
-          const panes = clonedMap.querySelectorAll('.leaflet-pane');
-          panes.forEach(pane => {
-            pane.style.transform = 'none';
-          });
-        }
+      ignoreElements: (el) => {
+        // Skip Leaflet panes with transform issues - we'll redraw them
+        return el.classList && (
+          el.classList.contains('leaflet-marker-pane') ||
+          el.classList.contains('leaflet-overlay-pane')
+        );
       },
     });
+
+    // Redraw markers and arrows on canvas manually
+    const ctx = canvas.getContext('2d');
+    const scale = 2; // match html2canvas scale
+    
+    if (marker) {
+      const markerPos = marker.getLatLng();
+      const markerPoint = map.latLngToContainerPoint(markerPos);
+      
+      // Draw orange marker dot
+      ctx.beginPath();
+      ctx.arc(markerPoint.x * scale, markerPoint.y * scale, 8 * scale, 0, 2 * Math.PI);
+      ctx.fillStyle = '#f59e0b';
+      ctx.fill();
+      ctx.lineWidth = 2 * scale;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+      ctx.shadowColor = 'rgba(0,0,0,.35)';
+      ctx.shadowBlur = 4 * scale;
+    }
+    
+    // Draw azimuth arrows
+    const drawArrow = (shaftLayer, headLayer, color) => {
+      if (!shaftLayer || !headLayer) return;
+      
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 4.5 * scale;
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.92;
+      
+      // Draw shaft
+      const shaftLatLngs = shaftLayer.getLatLngs();
+      if (shaftLatLngs.length >= 2) {
+        const start = map.latLngToContainerPoint(shaftLatLngs[0]);
+        const end = map.latLngToContainerPoint(shaftLatLngs[1]);
+        ctx.beginPath();
+        ctx.moveTo(start.x * scale, start.y * scale);
+        ctx.lineTo(end.x * scale, end.y * scale);
+        ctx.stroke();
+      }
+      
+      // Draw head
+      const headLatLngs = headLayer.getLatLngs();
+      if (headLatLngs.length >= 3) {
+        ctx.beginPath();
+        const p0 = map.latLngToContainerPoint(headLatLngs[0]);
+        ctx.moveTo(p0.x * scale, p0.y * scale);
+        for (let i = 1; i < headLatLngs.length; i++) {
+          const p = map.latLngToContainerPoint(headLatLngs[i]);
+          ctx.lineTo(p.x * scale, p.y * scale);
+        }
+        ctx.stroke();
+      }
+      
+      ctx.globalAlpha = 1;
+    };
+    
+    // Draw primary arrow (red)
+    if (azimuthShaft && azimuthHead) {
+      drawArrow(azimuthShaft, azimuthHead, CHART_COLORS.primary);
+    }
+    
+    // Draw secondary arrow (blue) if present
+    if (azimuthSecondaryShaft && azimuthSecondaryHead) {
+      drawArrow(azimuthSecondaryShaft, azimuthSecondaryHead, CHART_COLORS.secondary);
+    }
 
     return canvas.toDataURL('image/png', 0.95);
   } finally {
     try {
-      if (map && map.getZoom() !== originalZoom) {
-        map.setZoom(originalZoom, { animate: false });
+      // Restore original view
+      if (map) {
+        map.setView(originalCenter, originalZoom, { animate: false });
         await new Promise((resolve) => setTimeout(resolve, 100));
+        map.invalidateSize();
+        updateAzimuthArrowFromInputs();
       }
-      map?.invalidateSize();
-      updateAzimuthArrowFromInputs();
     } catch {
       // ignore
     }
