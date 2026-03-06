@@ -1156,69 +1156,102 @@ async function captureMapForPDF() {
     map.invalidateSize();
     await new Promise((resolve) => setTimeout(resolve, 100));
     
-    // Force overlay repositioning after zoom/pan
+    // Force overlay repositioning
     updateAzimuthArrowFromInputs();
     
-    // Wait for tiles and overlays to stabilize
+    // Wait for everything to stabilize
     await new Promise((resolve) => setTimeout(resolve, 800));
     await waitForMapTiles(mapElement, 4000);
     await new Promise((resolve) => setTimeout(resolve, 400));
 
-    // Capture ONLY the base map tiles (exclude overlays that use CSS transforms)
-    const canvas = await html2canvas(mapElement, {
+    // Get the SVG overlay pane containing the arrows
+    const overlayPane = map._panes?.overlayPane;
+    let svgOverlay = null;
+    if (overlayPane) {
+      svgOverlay = overlayPane.querySelector('svg');
+    }
+
+    // Capture base map with tiles
+    const baseCanvas = await html2canvas(mapElement, {
       scale: 2,
       useCORS: true,
       allowTaint: false,
       backgroundColor: '#ffffff',
       logging: false,
       ignoreElements: (el) => {
-        // Exclude all Leaflet overlay elements
+        // Exclude overlay and marker panes - we'll redraw them
         if (!el.classList) return false;
-        return el.classList.contains('leaflet-marker-pane') || 
-               el.classList.contains('leaflet-overlay-pane') ||
-               el.classList.contains('leaflet-shadow-pane') ||
-               el.classList.contains('az-handle-icon');
+        return el.classList.contains('leaflet-overlay-pane') || 
+               el.classList.contains('leaflet-marker-pane') ||
+               el.classList.contains('leaflet-shadow-pane');
       },
     });
 
-    // Now manually redraw markers and arrows on the captured canvas
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return canvas.toDataURL('image/png', 0.95);
+    const ctx = baseCanvas.getContext('2d');
+    if (!ctx) return baseCanvas.toDataURL('image/png', 0.95);
     
-    const scale = 2; // html2canvas scale
+    const scale = 2;
     
-    // Get map container offset for coordinate conversion
-    const mapRect = mapElement.getBoundingClientRect();
+    // Redraw SVG overlay (arrows) if it exists
+    if (svgOverlay) {
+      try {
+        // Clone and prepare SVG for rendering
+        const svgClone = svgOverlay.cloneNode(true);
+        const svgRect = svgOverlay.getBoundingClientRect();
+        const mapRect = mapElement.getBoundingClientRect();
+        
+        // Set SVG dimensions and viewBox
+        svgClone.setAttribute('width', svgRect.width);
+        svgClone.setAttribute('height', svgRect.height);
+        svgClone.setAttribute('viewBox', `0 0 ${svgRect.width} ${svgRect.height}`);
+        
+        // Serialize SVG to string
+        const serializer = new XMLSerializer();
+        const svgString = serializer.serializeToString(svgClone);
+        const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+        const svgUrl = URL.createObjectURL(svgBlob);
+        
+        // Load SVG as image and draw on canvas
+        await new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => {
+            // Calculate position on canvas
+            const offsetX = (svgRect.left - mapRect.left) * scale;
+            const offsetY = (svgRect.top - mapRect.top) * scale;
+            ctx.drawImage(img, offsetX, offsetY, svgRect.width * scale, svgRect.height * scale);
+            URL.revokeObjectURL(svgUrl);
+            resolve();
+          };
+          img.onerror = () => {
+            URL.revokeObjectURL(svgUrl);
+            reject(new Error('Failed to load SVG'));
+          };
+          img.src = svgUrl;
+        });
+      } catch (e) {
+        console.warn('Failed to capture SVG overlay:', e);
+      }
+    }
     
-    // Helper: Convert lat/lng to canvas pixel coordinates
-    const latLngToCanvasPixel = (latLng) => {
-      const point = map.latLngToContainerPoint(latLng);
-      return {
-        x: point.x * scale,
-        y: point.y * scale,
-      };
-    };
-    
-    // Draw marker (orange circle)
+    // Redraw marker
     if (marker) {
       try {
         const pos = marker.getLatLng();
-        const canvasPoint = latLngToCanvasPixel(pos);
+        const point = map.latLngToContainerPoint(pos);
+        const canvasX = point.x * scale;
+        const canvasY = point.y * scale;
         
-        // Draw circle with shadow
         ctx.save();
         ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
         ctx.shadowBlur = 4 * scale;
-        ctx.shadowOffsetX = 0;
         ctx.shadowOffsetY = 1 * scale;
         
         ctx.beginPath();
-        ctx.arc(canvasPoint.x, canvasPoint.y, 8 * scale, 0, 2 * Math.PI);
+        ctx.arc(canvasX, canvasY, 8 * scale, 0, 2 * Math.PI);
         ctx.fillStyle = '#f59e0b';
         ctx.fill();
         
         ctx.shadowColor = 'transparent';
-        ctx.shadowBlur = 0;
         ctx.lineWidth = 2 * scale;
         ctx.strokeStyle = '#ffffff';
         ctx.stroke();
@@ -1227,55 +1260,8 @@ async function captureMapForPDF() {
         console.error('Failed to draw marker:', e);
       }
     }
-    
-    // Helper: Draw an arrow polyline
-    const drawArrowPolyline = (polylineLayer, color) => {
-      if (!polylineLayer) return;
-      
-      try {
-        const latLngs = polylineLayer.getLatLngs();
-        if (!latLngs || latLngs.length < 2) return;
-        
-        ctx.save();
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 4.5 * scale;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.globalAlpha = 0.92;
-        
-        ctx.beginPath();
-        const firstPoint = latLngToCanvasPixel(latLngs[0]);
-        ctx.moveTo(firstPoint.x, firstPoint.y);
-        
-        for (let i = 1; i < latLngs.length; i++) {
-          const point = latLngToCanvasPixel(latLngs[i]);
-          ctx.lineTo(point.x, point.y);
-        }
-        
-        ctx.stroke();
-        ctx.restore();
-      } catch (e) {
-        console.error('Failed to draw arrow polyline:', e);
-      }
-    };
-    
-    // Draw primary azimuth arrow (red) - shaft and head
-    if (azimuthShaft) {
-      drawArrowPolyline(azimuthShaft, '#ef4444');
-    }
-    if (azimuthHead) {
-      drawArrowPolyline(azimuthHead, '#ef4444');
-    }
-    
-    // Draw secondary azimuth arrow (blue) - shaft and head
-    if (azimuthSecondaryShaft) {
-      drawArrowPolyline(azimuthSecondaryShaft, '#2563eb');
-    }
-    if (azimuthSecondaryHead) {
-      drawArrowPolyline(azimuthSecondaryHead, '#2563eb');
-    }
 
-    return canvas.toDataURL('image/png', 0.95);
+    return baseCanvas.toDataURL('image/png', 0.95);
   } catch (err) {
     console.error('Map capture error:', err);
     return null;
