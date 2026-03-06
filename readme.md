@@ -13,16 +13,7 @@ L'application utilise :
 
 ## Démarrage rapide
 
-Option 1 (simple) :
-1. Ouvrir `index.html` dans le navigateur.
-
-Option 2 (serveur local statique) :
-
-```bash
-python -m http.server 8000
-```
-
-Puis ouvrir `http://localhost:8000`.
+Disponible en ligne : https://solar.remcorp.fr
 
 ## Utilisation
 

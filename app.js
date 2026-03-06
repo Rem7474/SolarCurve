@@ -221,7 +221,9 @@ form.addEventListener('submit', async (event) => {
 
 // ─── Input Parsing ─────────────────────────────────────────
 function parseDecimal(val) {
-  return Number(String(val).replace(',', '.'));
+  const normalized = String(val ?? '').trim().replace(',', '.');
+  if (!normalized) return Number.NaN;
+  return Number(normalized);
 }
 
 function getInputs() {
@@ -905,14 +907,15 @@ function initMap() {
     return;
   }
 
-  const defaultLat = Number(latInput.value) || 46.5;
-  const defaultLon = Number(lonInput.value) || 2.5;
+  const defaultLat = parseDecimal(latInput.value) || 46.5;
+  const defaultLon = parseDecimal(lonInput.value) || 2.5;
 
   map = L.map('map').setView([defaultLat, defaultLon], 6);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; OpenStreetMap contributors',
+    crossOrigin: true,
   }).addTo(map);
 
   map.on('click', (event) => {
@@ -938,21 +941,31 @@ function initMap() {
     if (mapHintEl) mapHintEl.textContent = `Point sélectionné : ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
   });
 
-  if (!Number.isNaN(Number(latInput.value)) && !Number.isNaN(Number(lonInput.value))) {
+  if (!Number.isNaN(parseDecimal(latInput.value)) && !Number.isNaN(parseDecimal(lonInput.value))) {
     updateMapFromInputs();
   }
 }
 
+function createMapMarkerIcon() {
+  if (typeof L === 'undefined') return undefined;
+  return L.divIcon({
+    className: 'sc-map-marker',
+    html: '<span style="display:block;width:16px;height:16px;border-radius:50%;background:#f59e0b;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)"></span>',
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
+  });
+}
+
 function placeOrMoveMarker(lat, lon) {
   if (!map) return;
-  if (!marker) marker = L.marker([lat, lon]).addTo(map);
+  if (!marker) marker = L.marker([lat, lon], { icon: createMapMarkerIcon() }).addTo(map);
   else marker.setLatLng([lat, lon]);
 }
 
 function updateMapFromInputs(centerMap = false) {
   if (!map) return;
-  const lat = Number(latInput.value);
-  const lon = Number(lonInput.value);
+  const lat = parseDecimal(latInput.value);
+  const lon = parseDecimal(lonInput.value);
   if (Number.isNaN(lat) || Number.isNaN(lon)) return;
 
   placeOrMoveMarker(lat, lon);
@@ -963,8 +976,8 @@ function updateMapFromInputs(centerMap = false) {
 
 function updateAzimuthArrowFromInputs() {
   if (!map) return;
-  const lat = Number(latInput.value);
-  const lon = Number(lonInput.value);
+  const lat = parseDecimal(latInput.value);
+  const lon = parseDecimal(lonInput.value);
   const azS = Number(azimuthInput.value);
   const azS2 = Number(azimuth2Input.value);
   const compareEnabled = compareAzimuthCheckbox.checked && !azimuth2Input.disabled;
@@ -1089,6 +1102,71 @@ function destinationPoint(lat, lon, bearingDeg, distanceMeters) {
   const destLat = Math.asin(Math.sin(latR) * Math.cos(d) + Math.cos(latR) * Math.sin(d) * Math.cos(br));
   const destLon = lonR + Math.atan2(Math.sin(br) * Math.sin(d) * Math.cos(latR), Math.cos(d) - Math.sin(latR) * Math.sin(destLat));
   return { lat: destLat / r, lon: destLon / r };
+}
+
+function waitForMapTiles(mapElement, timeoutMs = 3500) {
+  const pendingTiles = Array.from(
+    mapElement.querySelectorAll('.leaflet-tile-pane img.leaflet-tile')
+  ).filter((tile) => !tile.classList.contains('leaflet-tile-loaded'));
+
+  if (pendingTiles.length === 0) return Promise.resolve();
+
+  return new Promise((resolve) => {
+    let remaining = pendingTiles.length;
+    let finished = false;
+    let timer = null;
+
+    const done = () => {
+      if (finished) return;
+      finished = true;
+      if (timer) clearTimeout(timer);
+      resolve();
+    };
+
+    const onTileSettled = () => {
+      remaining -= 1;
+      if (remaining <= 0) done();
+    };
+
+    timer = setTimeout(done, timeoutMs);
+    pendingTiles.forEach((tile) => {
+      tile.addEventListener('load', onTileSettled, { once: true });
+      tile.addEventListener('error', onTileSettled, { once: true });
+    });
+  });
+}
+
+async function captureMapForPDF() {
+  if (!map) return null;
+  const mapElement = document.getElementById('map');
+  if (!mapElement) return null;
+
+  const originalZoom = map.getZoom();
+  const targetZoom = Math.max(originalZoom, 16);
+
+  try {
+    map.invalidateSize();
+    if (targetZoom !== originalZoom) map.setZoom(targetZoom, { animate: false });
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await waitForMapTiles(mapElement);
+
+    const canvas = await html2canvas(mapElement, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+    });
+
+    return canvas.toDataURL('image/png', 0.95);
+  } finally {
+    try {
+      if (map && map.getZoom() !== originalZoom) map.setZoom(originalZoom, { animate: false });
+      map?.invalidateSize();
+    } catch {
+      // ignore
+    }
+  }
 }
 
 // ─── PDF Export (Professional Portrait Design) ────────────
@@ -1231,13 +1309,11 @@ async function exportToPDF() {
     let mapImg = null;
     if (map && document.getElementById('map')) {
       try {
-        const originalZoom = map.getZoom();
-        map.setZoom(17);
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        const canvas = await html2canvas(document.getElementById('map'), { scale: 2, useCORS: true, logging: false });
-        mapImg = canvas.toDataURL('image/png', 0.95);
-        map.setZoom(originalZoom);
-      } catch (err) { console.warn(err); mapImg = null; }
+        mapImg = await captureMapForPDF();
+      } catch (err) {
+        console.warn('Map capture failed', err);
+        mapImg = null;
+      }
     }
 
         // ─────────────────── Page 1: Synthèse ───────────────────
