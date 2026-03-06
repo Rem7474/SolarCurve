@@ -33,6 +33,10 @@ const sidebarOverlay = document.getElementById('sidebarOverlay');
 const peakShavingSection = document.getElementById('peakShavingSection');
 const peakShavingStatsEl = document.getElementById('peakShavingStats');
 const peakShavingChartCanvas = document.getElementById('peakShavingChart');
+const optimizeWcBtn = document.getElementById('optimizeWcBtn');
+const optimizeWcResultEl = document.getElementById('optimizeWcResult');
+const peakPowerInputEl = document.getElementById('peakPower');
+const consumptionPowerInputEl = document.getElementById('consumptionPower');
 
 // ─── State ─────────────────────────────────────────────────
 let dailyProfileChart;
@@ -53,6 +57,12 @@ let azimuthSecondaryHead;
 let azimuthHandle = null;
 let azimuthSecondaryHandle = null;
 let suppressMapClick = false;
+let optimizedSplitResult = null;
+
+function resetOptimizationResult() {
+  optimizedSplitResult = null;
+  if (optimizeWcResultEl) optimizeWcResultEl.textContent = '';
+}
 
 // ─── Sidebar Toggle (mobile) ──────────────────────────────
 if (sidebarToggle && sidebarEl) {
@@ -79,6 +89,7 @@ compareAzimuthCheckbox.addEventListener('change', () => {
   azimuth2Input.disabled = !enabled;
   if (enabled) setAutoOppositeAzimuth(true);
   updateAzimuthArrowFromInputs();
+  resetOptimizationResult();
 });
 
 daySlider.addEventListener('input', () => {
@@ -96,12 +107,22 @@ lonInput.addEventListener('change', () => updateMapFromInputs());
 azimuthInput.addEventListener('input', () => {
   setAutoOppositeAzimuth();
   updateAzimuthArrowFromInputs();
+  resetOptimizationResult();
 });
 
 azimuth2Input.addEventListener('input', () => {
   azimuth2Input.dataset.auto = 'false';
   updateAzimuthArrowFromInputs();
+  resetOptimizationResult();
 });
+
+if (peakPowerInputEl) {
+  peakPowerInputEl.addEventListener('input', () => resetOptimizationResult());
+}
+
+if (consumptionPowerInputEl) {
+  consumptionPowerInputEl.addEventListener('input', () => resetOptimizationResult());
+}
 
 geoBtn.addEventListener('click', () => {
   if (!navigator.geolocation) {
@@ -155,6 +176,35 @@ if (exportPdfBtn) {
     } finally {
       exportPdfBtn.disabled = false;
       exportPdfBtn.innerHTML = originalHTML;
+    }
+  });
+}
+
+if (optimizeWcBtn) {
+  optimizeWcBtn.addEventListener('click', async () => {
+    const originalLabel = optimizeWcBtn.textContent;
+    optimizeWcBtn.disabled = true;
+    optimizeWcBtn.textContent = 'Optimisation…';
+
+    try {
+      const result = await optimizeWcSplit();
+      if (!result) return;
+
+      optimizedSplitResult = result;
+      if (optimizeWcResultEl) {
+        optimizeWcResultEl.textContent =
+          `Recommandé (${Math.round(result.totalWc)} Wc total) : ` +
+          `${Math.round(result.wc1)} Wc à ${result.az1}° et ${Math.round(result.wc2)} Wc à ${result.az2}° ` +
+          `· Couverture ${result.coveragePct.toFixed(1)}% · Autoconso ${result.selfConsumptionPct.toFixed(1)}%`;
+      }
+
+      setStatus('Répartition Wc optimisée. Relancez Estimer pour visualiser les courbes actuelles.', 'success');
+    } catch (error) {
+      console.error(error);
+      setStatus(`Erreur optimisation : ${error.message}`, 'error');
+    } finally {
+      optimizeWcBtn.disabled = false;
+      optimizeWcBtn.textContent = originalLabel;
     }
   });
 }
@@ -265,6 +315,102 @@ function getInputs() {
   }
 
   return { lat, lon, peakPower, tilt, azimuth, compareAzimuth, azimuth2, losses, source, pvwattsKey };
+}
+
+async function optimizeWcSplit() {
+  const params = getInputs();
+  if (!params) return null;
+
+  if (!params.compareAzimuth) {
+    setStatus('Activez "Ajouter un 2e azimut" pour optimiser la répartition des Wc.', 'error');
+    return null;
+  }
+
+  const consumptionPowerW = Number(document.getElementById('consumptionPower').value);
+  if (!consumptionPowerW || consumptionPowerW <= 0) {
+    setStatus('Renseignez "Charge moyenne (W)" (> 0) pour optimiser couverture et autoconsommation.', 'error');
+    return null;
+  }
+
+  const totalWc = Number(document.getElementById('peakPower').value);
+  if (!totalWc || totalWc <= 0) {
+    setStatus('Puissance crête invalide.', 'error');
+    return null;
+  }
+
+  setStatus('Optimisation en cours (simulation de plusieurs répartitions)…');
+
+  const baseParams = { ...params, peakPower: 1 };
+  const primary = await fetchFromSource({ ...baseParams, azimuth: params.azimuth });
+  const secondary = await fetchFromSource({ ...baseParams, azimuth: params.azimuth2 });
+
+  const primaryMap = buildHourlyProductionMap(primary.hourlyEntries);
+  const secondaryMap = buildHourlyProductionMap(secondary.hourlyEntries);
+  const keys = [...new Set([...primaryMap.keys(), ...secondaryMap.keys()])];
+  const hourlyConsumptionKwh = consumptionPowerW / 1000;
+
+  let best = null;
+  for (let i = 0; i <= 100; i += 2) {
+    const splitPrimary = i / 100;
+    const candidate = evaluateSplitCandidate(
+      keys,
+      primaryMap,
+      secondaryMap,
+      splitPrimary,
+      totalWc / 1000,
+      hourlyConsumptionKwh
+    );
+
+    if (!best || candidate.score > best.score) best = candidate;
+  }
+
+  if (!best) throw new Error('Impossible de calculer une répartition optimale.');
+
+  return {
+    az1: params.azimuth,
+    az2: params.azimuth2,
+    totalWc,
+    wc1: totalWc * best.splitPrimary,
+    wc2: totalWc * (1 - best.splitPrimary),
+    splitPrimary: best.splitPrimary,
+    selfConsumptionPct: best.selfConsumptionPct,
+    coveragePct: best.coveragePct,
+    score: best.score,
+  };
+}
+
+function buildHourlyProductionMap(hourlyEntries) {
+  const map = new Map();
+  for (const entry of hourlyEntries) {
+    const key = `${entry.dayKey}:${entry.hour}`;
+    map.set(key, (map.get(key) ?? 0) + entry.kwh);
+  }
+  return map;
+}
+
+function evaluateSplitCandidate(keys, primaryMap, secondaryMap, splitPrimary, totalKwp, hourlyConsumptionKwh) {
+  let totalSelfConsumed = 0;
+  let totalProduction = 0;
+  let totalConsumption = 0;
+
+  const splitSecondary = 1 - splitPrimary;
+
+  for (const key of keys) {
+    const p1 = primaryMap.get(key) ?? 0;
+    const p2 = secondaryMap.get(key) ?? 0;
+    const production = totalKwp * ((splitPrimary * p1) + (splitSecondary * p2));
+    const selfConsumed = Math.min(production, hourlyConsumptionKwh);
+
+    totalProduction += production;
+    totalSelfConsumed += selfConsumed;
+    totalConsumption += hourlyConsumptionKwh;
+  }
+
+  const selfConsumptionPct = totalProduction > 0 ? (totalSelfConsumed / totalProduction) * 100 : 0;
+  const coveragePct = totalConsumption > 0 ? (totalSelfConsumed / totalConsumption) * 100 : 0;
+  const score = (coveragePct * 0.6) + (selfConsumptionPct * 0.4);
+
+  return { splitPrimary, selfConsumptionPct, coveragePct, score };
 }
 
 // ─── API Fetching ──────────────────────────────────────────
@@ -716,6 +862,13 @@ function renderStats(dailyData, secondaryDailyData = null) {
       statCard(`Part azimut ${currentPrimaryAzimuth}°`, `${pct1.toFixed(1)} %`),
       statCard(`Part azimut ${currentSecondaryAzimuth}°`, `${pct2.toFixed(1)} %`),
     ].join('');
+
+    if (optimizedSplitResult) {
+      statsEl.innerHTML += statCard(
+        'Répartition Wc optimisée',
+        `${Math.round(optimizedSplitResult.wc1)} Wc (${optimizedSplitResult.az1}°) · ${Math.round(optimizedSplitResult.wc2)} Wc (${optimizedSplitResult.az2}°)`
+      );
+    }
     return;
   }
 
@@ -729,6 +882,13 @@ function renderStats(dailyData, secondaryDailyData = null) {
     statCard('Jour le plus faible', `${sorted[0].day} · ${sorted[0].kwh.toFixed(2)} kWh`),
     statCard('Jour le plus productif', `${sorted[sorted.length - 1].day} · ${sorted[sorted.length - 1].kwh.toFixed(2)} kWh`),
   ].join('');
+
+  if (optimizedSplitResult) {
+    statsEl.innerHTML += statCard(
+      'Répartition Wc optimisée',
+      `${Math.round(optimizedSplitResult.wc1)} Wc (${optimizedSplitResult.az1}°) · ${Math.round(optimizedSplitResult.wc2)} Wc (${optimizedSplitResult.az2}°)`
+    );
+  }
 }
 
 function statCard(title, value) {
@@ -780,18 +940,19 @@ function updatePeakShavingDisplay() {
   }
 
   // Compute remaining consumption (not offset by production)
+  const DAYS_IN_MONTH = [31, 28.25, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const consumptionByMonth = Array.from({ length: 12 }, (_, m) => consumptionPowerKW * 24 * DAYS_IN_MONTH[m]);
   const remainingByMonth = Array.from({ length: 12 }, () => 0);
   for (let m = 0; m < 12; m++) {
-    const daysInMonth = [31, 28.25, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m];
-    const totalConsumption = consumptionPowerKW * 24 * daysInMonth;
-    remainingByMonth[m] = Math.max(0, totalConsumption - shavingByMonth[m]);
+    remainingByMonth[m] = Math.max(0, consumptionByMonth[m] - shavingByMonth[m]);
   }
 
   const totalShaved = shavingByMonth.reduce((a, b) => a + b, 0);
   const totalSurplus = surplusByMonth.reduce((a, b) => a + b, 0);
   const totalConsumption = consumptionPowerKW * 24 * 365.25;
   const totalProduction = totalShaved + totalSurplus; // Total production
-  const shavingPct = totalConsumption > 0 ? (totalShaved / totalConsumption * 100) : 0;
+  const shavingPct = totalProduction > 0 ? (totalShaved / totalProduction * 100) : 0;
+  const coveragePct = totalConsumption > 0 ? (totalShaved / totalConsumption * 100) : 0;
 
   // Calculate monthly self-consumption rates
   const MONTHS_SHORT = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
@@ -801,11 +962,17 @@ function updatePeakShavingDisplay() {
     return `<span style="display:inline-block; margin-right:12px; margin-bottom:6px; padding:4px 8px; background:#f0fdf4; border-radius:4px; font-size:11px;"><strong>${month}</strong> ${rateMonth.toFixed(1)}%</span>`;
   }).join('');
 
+  const monthlyCoverageHtml = MONTHS_SHORT.map((month, idx) => {
+    const coverageMonth = consumptionByMonth[idx] > 0 ? (shavingByMonth[idx] / consumptionByMonth[idx] * 100) : 0;
+    return `<span style="display:inline-block; margin-right:12px; margin-bottom:6px; padding:4px 8px; background:#eff6ff; border-radius:4px; font-size:11px;"><strong>${month}</strong> ${coverageMonth.toFixed(1)}%</span>`;
+  }).join('');
+
   peakShavingStatsEl.innerHTML = [
     statCard('Autoconsommé', `${totalShaved.toFixed(1)} kWh`),
     statCard('Taux d\'autoconsommation', `${shavingPct.toFixed(1)} %`),
+    statCard('Taux de couverture solaire', `${coveragePct.toFixed(1)} %`),
     statCard('Surplus (non utilisé)', `${totalSurplus.toFixed(1)} kWh`),
-    `<div style="margin-top:12px; padding-top:12px; border-top:1px solid #e2e8f0;"><p style="margin:0 0 8px 0; font-size:12px; color:#64748b;"><strong>Taux d'autoconsommation mensuel:</strong></p><div>${monthlyRatesHtml}</div></div>`,
+    `<div style="margin-top:12px; padding-top:12px; border-top:1px solid #e2e8f0;"><p style="margin:0 0 8px 0; font-size:12px; color:#64748b;"><strong>Taux d'autoconsommation mensuel:</strong></p><div>${monthlyRatesHtml}</div><p style="margin:10px 0 8px 0; font-size:12px; color:#64748b;"><strong>Taux de couverture solaire mensuel:</strong></p><div>${monthlyCoverageHtml}</div></div>`,
   ].join('');
 
   // Render stacked bar chart for monthly peak shaving
