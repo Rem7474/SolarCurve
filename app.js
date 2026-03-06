@@ -1163,115 +1163,49 @@ async function captureMapForPDF() {
     await waitForMapTiles(mapElement, 4000);
     await new Promise((resolve) => setTimeout(resolve, 400));
 
-    // Capture base map only (tiles and base layers), excluding overlays with CSS transforms
+    // Temporarily disable 3D transforms on all Leaflet panes in the REAL DOM
+    // This allows html2canvas to capture overlays at their visual position
+    const mapContainer = mapElement.querySelector('.leaflet-map-pane');
+    const allPanes = mapContainer ? mapContainer.querySelectorAll('.leaflet-pane') : [];
+    const savedStyles = [];
+    
+    allPanes.forEach((pane) => {
+      const computedTransform = window.getComputedStyle(pane).transform;
+      savedStyles.push({
+        element: pane,
+        originalTransform: pane.style.transform,
+        computedTransform: computedTransform,
+      });
+      
+      // Apply the computed transform as a static style (removes translate3d)
+      if (computedTransform && computedTransform !== 'none') {
+        pane.style.transform = computedTransform;
+        pane.style.willChange = 'auto';
+      }
+    });
+    
+    // Force browser reflow
+    mapElement.offsetHeight;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Capture everything including the now-statically-positioned overlays
     const canvas = await html2canvas(mapElement, {
       scale: 2,
       useCORS: true,
       allowTaint: false,
       backgroundColor: '#ffffff',
       logging: false,
-      ignoreElements: (el) => {
-        // Exclude Leaflet overlay panes that use CSS transforms
-        if (!el.classList) return false;
-        return el.classList.contains('leaflet-marker-pane') || 
-               el.classList.contains('leaflet-overlay-pane') ||
-               el.classList.contains('az-handle-icon');
-      },
     });
 
-    // Manually redraw overlays on captured canvas
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return canvas.toDataURL('image/png', 0.95);
+    // Restore original transforms
+    savedStyles.forEach(({ element, originalTransform }) => {
+      element.style.transform = originalTransform;
+      element.style.willChange = '';
+    });
     
-    const scale = 2; // Match html2canvas scale
-    
-    // Helper to convert lat/lng to canvas pixel coordinates
-    const latLngToCanvasPoint = (latLng) => {
-      const containerPoint = map.latLngToContainerPoint(latLng);
-      return {
-        x: containerPoint.x * scale,
-        y: containerPoint.y * scale,
-      };
-    };
-    
-    // Draw orange marker
-    if (marker) {
-      try {
-        const markerPos = marker.getLatLng();
-        const point = latLngToCanvasPoint(markerPos);
-        
-        ctx.shadowColor = 'rgba(0,0,0,.35)';
-        ctx.shadowBlur = 4 * scale;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 1 * scale;
-        
-        // Draw marker circle
-        ctx.beginPath();
-        ctx.arc(point.x, point.y, 8 * scale, 0, 2 * Math.PI);
-        ctx.fillStyle = '#f59e0b';
-        ctx.fill();
-        
-        // Draw white border
-        ctx.shadowColor = 'transparent';
-        ctx.lineWidth = 2 * scale;
-        ctx.strokeStyle = '#ffffff';
-        ctx.stroke();
-      } catch (e) {
-        console.warn('Failed to draw marker:', e);
-      }
-    }
-    
-    // Helper to draw an arrow (shaft + head)
-    const drawArrow = (shaftLayer, headLayer, color) => {
-      if (!shaftLayer || !headLayer) return;
-      
-      try {
-        ctx.shadowColor = 'transparent';
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.lineWidth = 4.5 * scale;
-        ctx.strokeStyle = color;
-        ctx.globalAlpha = 0.92;
-        
-        // Draw shaft
-        const shaftLatLngs = shaftLayer.getLatLngs();
-        if (shaftLatLngs && shaftLatLngs.length >= 2) {
-          const start = latLngToCanvasPoint(shaftLatLngs[0]);
-          const end = latLngToCanvasPoint(shaftLatLngs[1]);
-          ctx.beginPath();
-          ctx.moveTo(start.x, start.y);
-          ctx.lineTo(end.x, end.y);
-          ctx.stroke();
-        }
-        
-        // Draw arrowhead
-        const headLatLngs = headLayer.getLatLngs();
-        if (headLatLngs && headLatLngs.length >= 3) {
-          ctx.beginPath();
-          const p0 = latLngToCanvasPoint(headLatLngs[0]);
-          ctx.moveTo(p0.x, p0.y);
-          for (let i = 1; i < headLatLngs.length; i++) {
-            const p = latLngToCanvasPoint(headLatLngs[i]);
-            ctx.lineTo(p.x, p.y);
-          }
-          ctx.stroke();
-        }
-        
-        ctx.globalAlpha = 1.0;
-      } catch (e) {
-        console.warn('Failed to draw arrow:', e);
-      }
-    };
-    
-    // Draw primary azimuth arrow (red)
-    if (azimuthShaft && azimuthHead) {
-      drawArrow(azimuthShaft, azimuthHead, '#ef4444');
-    }
-    
-    // Draw secondary azimuth arrow (blue) if exists
-    if (azimuthSecondaryShaft && azimuthSecondaryHead) {
-      drawArrow(azimuthSecondaryShaft, azimuthSecondaryHead, '#2563eb');
-    }
+    // Force overlays to reposition properly after restore
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    updateAzimuthArrowFromInputs();
 
     return canvas.toDataURL('image/png', 0.95);
   } catch (err) {
