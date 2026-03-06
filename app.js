@@ -1225,12 +1225,12 @@ async function captureMapForPDF() {
     
     // Draw primary azimuth arrow (red)
     if (azimuthShaft && azimuthHead) {
-      drawArrow(azimuthShaft, azimuthHead, chartColors.red, 3);
+      drawArrow(azimuthShaft, azimuthHead, '#ef4444', 3);
     }
     
     // Draw secondary azimuth arrow (blue) if exists
     if (azimuthSecondaryShaft && azimuthSecondaryHead) {
-      drawArrow(azimuthSecondaryShaft, azimuthSecondaryHead, chartColors.blue, 3);
+      drawArrow(azimuthSecondaryShaft, azimuthSecondaryHead, '#2563eb', 3);
     }
     
     // Draw marker
