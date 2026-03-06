@@ -915,6 +915,7 @@ function initMap() {
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; OpenStreetMap contributors',
+    crossOrigin: 'anonymous',
   }).addTo(map);
 
   map.on('click', (event) => {
@@ -1163,26 +1164,41 @@ async function captureMapForPDF() {
     await waitForMapTiles(mapElement, 5000);
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    // Capture base map only (tiles)
-    const baseCanvas = await html2canvas(mapElement, {
-      scale: 2,
-      backgroundColor: '#ffffff',
-      logging: false,
-      ignoreElements: (el) => {
-        // Exclude all Leaflet overlay elements
-        if (!el.classList) return false;
-        return el.classList.contains('leaflet-overlay-pane') || 
-               el.classList.contains('leaflet-marker-pane') ||
-               el.classList.contains('leaflet-shadow-pane') ||
-               el.classList.contains('leaflet-popup-pane') ||
-               el.classList.contains('leaflet-tooltip-pane');
-      },
-    });
-
-    const ctx = baseCanvas.getContext('2d');
-    if (!ctx) return baseCanvas.toDataURL('image/png', 0.95);
-    
+    // Create canvas manually since html2canvas can't capture cross-origin tiles
     const scale = 2;
+    const width = mapElement.offsetWidth;
+    const height = mapElement.offsetHeight;
+    const canvas = document.createElement('canvas');
+    canvas.width = width * scale;
+    canvas.height = height * scale;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    
+    // Fill background
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw all visible map tiles
+    const tiles = mapElement.querySelectorAll('.leaflet-tile-pane img.leaflet-tile');
+    const mapRect = mapElement.getBoundingClientRect();
+    
+    for (const tile of tiles) {
+      if (!tile.complete || !tile.naturalWidth) continue;
+      
+      const tileRect = tile.getBoundingClientRect();
+      const x = (tileRect.left - mapRect.left) * scale;
+      const y = (tileRect.top - mapRect.top) * scale;
+      const w = tileRect.width * scale;
+      const h = tileRect.height * scale;
+      
+      try {
+        ctx.drawImage(tile, x, y, w, h);
+      } catch (e) {
+        // CORS issue on this tile, skip it
+        console.warn('Could not draw tile:', e);
+      }
+    }
     
     // Helper function to draw arrow on canvas
     const drawArrow = (polylineShaft, polylineHead, color, width) => {
@@ -1261,7 +1277,7 @@ async function captureMapForPDF() {
       }
     }
 
-    return baseCanvas.toDataURL('image/png', 0.95);
+    return canvas.toDataURL('image/png', 0.95);
   } catch (err) {
     console.error('Map capture error:', err);
     return null;
