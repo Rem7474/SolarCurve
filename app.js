@@ -915,7 +915,6 @@ function initMap() {
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; OpenStreetMap contributors',
-    crossOrigin: true,
   }).addTo(map);
 
   map.on('click', (event) => {
@@ -1167,8 +1166,6 @@ async function captureMapForPDF() {
     // Capture base map only (tiles)
     const baseCanvas = await html2canvas(mapElement, {
       scale: 2,
-      useCORS: true,
-      allowTaint: false,
       backgroundColor: '#ffffff',
       logging: false,
       ignoreElements: (el) => {
