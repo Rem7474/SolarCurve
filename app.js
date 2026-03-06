@@ -1152,116 +1152,36 @@ async function captureMapForPDF() {
       map.setZoom(targetZoom, { animate: false });
     }
     
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    // Wait for map to settle
+    await new Promise((resolve) => setTimeout(resolve, 500));
     map.invalidateSize();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 200));
     
     // Force overlay repositioning
     updateAzimuthArrowFromInputs();
     
-    // Wait for everything to stabilize
+    // Wait longer for everything (tiles, SVG overlays, markers) to stabilize
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    await waitForMapTiles(mapElement, 5000);
     await new Promise((resolve) => setTimeout(resolve, 800));
-    await waitForMapTiles(mapElement, 4000);
-    await new Promise((resolve) => setTimeout(resolve, 400));
 
-    // Get the SVG overlay pane containing the arrows
-    const overlayPane = map._panes?.overlayPane;
-    let svgOverlay = null;
-    if (overlayPane) {
-      svgOverlay = overlayPane.querySelector('svg');
-    }
-
-    // Capture base map with tiles
-    const baseCanvas = await html2canvas(mapElement, {
+    // Try capturing everything as-is with html2canvas
+    const canvas = await html2canvas(mapElement, {
       scale: 2,
       useCORS: true,
-      allowTaint: false,
+      allowTaint: true, // Allow to capture everything
+      foreignObjectRendering: true, // Better SVG support
       backgroundColor: '#ffffff',
-      logging: false,
-      ignoreElements: (el) => {
-        // Exclude overlay and marker panes - we'll redraw them
-        if (!el.classList) return false;
-        return el.classList.contains('leaflet-overlay-pane') || 
-               el.classList.contains('leaflet-marker-pane') ||
-               el.classList.contains('leaflet-shadow-pane');
-      },
+      logging: true, // Enable logging to see what's happening
+      width: mapElement.offsetWidth,
+      height: mapElement.offsetHeight,
+      x: 0,
+      y: 0,
+      scrollX: 0,
+      scrollY: 0,
     });
 
-    const ctx = baseCanvas.getContext('2d');
-    if (!ctx) return baseCanvas.toDataURL('image/png', 0.95);
-    
-    const scale = 2;
-    
-    // Redraw SVG overlay (arrows) if it exists
-    if (svgOverlay) {
-      try {
-        // Clone and prepare SVG for rendering
-        const svgClone = svgOverlay.cloneNode(true);
-        const svgRect = svgOverlay.getBoundingClientRect();
-        const mapRect = mapElement.getBoundingClientRect();
-        
-        // Set SVG dimensions and viewBox
-        svgClone.setAttribute('width', svgRect.width);
-        svgClone.setAttribute('height', svgRect.height);
-        svgClone.setAttribute('viewBox', `0 0 ${svgRect.width} ${svgRect.height}`);
-        
-        // Serialize SVG to string
-        const serializer = new XMLSerializer();
-        const svgString = serializer.serializeToString(svgClone);
-        const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-        const svgUrl = URL.createObjectURL(svgBlob);
-        
-        // Load SVG as image and draw on canvas
-        await new Promise((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => {
-            // Calculate position on canvas
-            const offsetX = (svgRect.left - mapRect.left) * scale;
-            const offsetY = (svgRect.top - mapRect.top) * scale;
-            ctx.drawImage(img, offsetX, offsetY, svgRect.width * scale, svgRect.height * scale);
-            URL.revokeObjectURL(svgUrl);
-            resolve();
-          };
-          img.onerror = () => {
-            URL.revokeObjectURL(svgUrl);
-            reject(new Error('Failed to load SVG'));
-          };
-          img.src = svgUrl;
-        });
-      } catch (e) {
-        console.warn('Failed to capture SVG overlay:', e);
-      }
-    }
-    
-    // Redraw marker
-    if (marker) {
-      try {
-        const pos = marker.getLatLng();
-        const point = map.latLngToContainerPoint(pos);
-        const canvasX = point.x * scale;
-        const canvasY = point.y * scale;
-        
-        ctx.save();
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
-        ctx.shadowBlur = 4 * scale;
-        ctx.shadowOffsetY = 1 * scale;
-        
-        ctx.beginPath();
-        ctx.arc(canvasX, canvasY, 8 * scale, 0, 2 * Math.PI);
-        ctx.fillStyle = '#f59e0b';
-        ctx.fill();
-        
-        ctx.shadowColor = 'transparent';
-        ctx.lineWidth = 2 * scale;
-        ctx.strokeStyle = '#ffffff';
-        ctx.stroke();
-        ctx.restore();
-      } catch (e) {
-        console.error('Failed to draw marker:', e);
-      }
-    }
-
-    return baseCanvas.toDataURL('image/png', 0.95);
+    return canvas.toDataURL('image/png', 0.95);
   } catch (err) {
     console.error('Map capture error:', err);
     return null;
