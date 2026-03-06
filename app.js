@@ -927,6 +927,13 @@ function updatePeakShavingDisplay() {
     }
   }
 
+  const yearSet = new Set();
+  for (const e of hourlyData) {
+    const year = Number(String(e.dayKey).slice(0, 4));
+    if (!Number.isNaN(year)) yearSet.add(year);
+  }
+  const yearsFactor = Math.max(1, yearSet.size);
+
   // Calculate monthly peak shaving (production used to offset consumption) and surplus
   const shavingByMonth = Array.from({ length: 12 }, () => 0);
   const surplusByMonth = Array.from({ length: 12 }, () => 0);
@@ -937,6 +944,13 @@ function updatePeakShavingDisplay() {
     const surplus = Math.max(0, hourlyProduction - hourlyConsumption);
     shavingByMonth[e.month - 1] += shaved;
     surplusByMonth[e.month - 1] += surplus;
+  }
+
+  if (yearsFactor > 1) {
+    for (let m = 0; m < 12; m++) {
+      shavingByMonth[m] /= yearsFactor;
+      surplusByMonth[m] /= yearsFactor;
+    }
   }
 
   // Compute remaining consumption (not offset by production)
