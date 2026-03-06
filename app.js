@@ -1145,24 +1145,49 @@ async function captureMapForPDF() {
   const targetZoom = Math.max(originalZoom, 16);
 
   try {
+    // Prepare map for capture
+    if (targetZoom !== originalZoom) {
+      map.setZoom(targetZoom, { animate: false });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    
     map.invalidateSize();
-    if (targetZoom !== originalZoom) map.setZoom(targetZoom, { animate: false });
-
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    
+    // Force overlay repositioning after zoom change
+    updateAzimuthArrowFromInputs();
+    
+    // Wait for tiles and overlays to settle
+    await new Promise((resolve) => setTimeout(resolve, 400));
     await waitForMapTiles(mapElement);
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
     const canvas = await html2canvas(mapElement, {
       scale: 2,
       useCORS: true,
+      allowTaint: false,
       backgroundColor: '#ffffff',
       logging: false,
+      onclone: (clonedDoc) => {
+        // Ensure all Leaflet panes are visible in the clone
+        const clonedMap = clonedDoc.getElementById('map');
+        if (clonedMap) {
+          const panes = clonedMap.querySelectorAll('.leaflet-pane');
+          panes.forEach(pane => {
+            pane.style.transform = 'none';
+          });
+        }
+      },
     });
 
     return canvas.toDataURL('image/png', 0.95);
   } finally {
     try {
-      if (map && map.getZoom() !== originalZoom) map.setZoom(originalZoom, { animate: false });
+      if (map && map.getZoom() !== originalZoom) {
+        map.setZoom(originalZoom, { animate: false });
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
       map?.invalidateSize();
+      updateAzimuthArrowFromInputs();
     } catch {
       // ignore
     }
