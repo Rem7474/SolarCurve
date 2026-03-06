@@ -98,6 +98,21 @@
               <span class="field-hint">Courbe superposée au 1<sup>er</sup> azimut</span>
             </div>
 
+            <div id="wc-split-wrapper" class="field hidden">
+              <label>Répartition puissance (Wc)</label>
+              <div class="field-row">
+                <div class="field">
+                  <label for="peakPower1">Wc azimut 1</label>
+                  <input id="peakPower1" name="peakPower1" type="number" step="1" min="1" value="600" disabled />
+                </div>
+                <div class="field">
+                  <label for="peakPower2">Wc azimut 2</label>
+                  <input id="peakPower2" name="peakPower2" type="number" step="1" min="1" value="400" disabled />
+                </div>
+              </div>
+              <span id="wcSplitHint" class="field-hint">Par défaut: 60% / 40% (modifiable manuellement)</span>
+            </div>
+
             <button id="optimizeWcBtn" type="button" class="btn btn-secondary btn-block">
               Optimiser la répartition Wc (2 azimuts)
             </button>

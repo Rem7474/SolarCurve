@@ -37,6 +37,10 @@ const optimizeWcBtn = document.getElementById('optimizeWcBtn');
 const optimizeWcResultEl = document.getElementById('optimizeWcResult');
 const peakPowerInputEl = document.getElementById('peakPower');
 const consumptionPowerInputEl = document.getElementById('consumptionPower');
+const wcSplitWrapper = document.getElementById('wc-split-wrapper');
+const peakPower1InputEl = document.getElementById('peakPower1');
+const peakPower2InputEl = document.getElementById('peakPower2');
+const wcSplitHintEl = document.getElementById('wcSplitHint');
 
 // ─── State ─────────────────────────────────────────────────
 let dailyProfileChart;
@@ -58,10 +62,45 @@ let azimuthHandle = null;
 let azimuthSecondaryHandle = null;
 let suppressMapClick = false;
 let optimizedSplitResult = null;
+let syncingPowerFields = false;
 
 function resetOptimizationResult() {
   optimizedSplitResult = null;
   if (optimizeWcResultEl) optimizeWcResultEl.textContent = '';
+}
+
+function syncSplitInputsFromTotal(force = false) {
+  if (!peakPowerInputEl || !peakPower1InputEl || !peakPower2InputEl) return;
+  if (!compareAzimuthCheckbox.checked) return;
+  if (!force && (peakPower1InputEl.dataset.auto === 'false' || peakPower2InputEl.dataset.auto === 'false')) return;
+
+  const totalWc = Math.max(0, Number(peakPowerInputEl.value) || 0);
+  const wc1 = Math.max(1, Math.round(totalWc * 0.6));
+  const wc2 = Math.max(1, Math.round(totalWc - wc1));
+
+  syncingPowerFields = true;
+  peakPower1InputEl.value = String(wc1);
+  peakPower2InputEl.value = String(wc2);
+  peakPower1InputEl.dataset.auto = 'true';
+  peakPower2InputEl.dataset.auto = 'true';
+  syncingPowerFields = false;
+}
+
+function syncTotalInputFromSplit() {
+  if (!peakPowerInputEl || !peakPower1InputEl || !peakPower2InputEl) return;
+  if (!compareAzimuthCheckbox.checked) return;
+
+  const wc1 = Math.max(0, Number(peakPower1InputEl.value) || 0);
+  const wc2 = Math.max(0, Number(peakPower2InputEl.value) || 0);
+  const total = Math.round(wc1 + wc2);
+
+  syncingPowerFields = true;
+  peakPowerInputEl.value = String(total);
+  syncingPowerFields = false;
+
+  if (wcSplitHintEl) {
+    wcSplitHintEl.textContent = `Total réparti: ${total} Wc`;
+  }
 }
 
 // ─── Sidebar Toggle (mobile) ──────────────────────────────
@@ -87,7 +126,11 @@ compareAzimuthCheckbox.addEventListener('change', () => {
   const enabled = compareAzimuthCheckbox.checked;
   azimuth2Wrapper.classList.toggle('hidden', !enabled);
   azimuth2Input.disabled = !enabled;
+  if (wcSplitWrapper) wcSplitWrapper.classList.toggle('hidden', !enabled);
+  if (peakPower1InputEl) peakPower1InputEl.disabled = !enabled;
+  if (peakPower2InputEl) peakPower2InputEl.disabled = !enabled;
   if (enabled) setAutoOppositeAzimuth(true);
+  if (enabled) syncSplitInputsFromTotal(true);
   updateAzimuthArrowFromInputs();
   resetOptimizationResult();
 });
@@ -117,11 +160,34 @@ azimuth2Input.addEventListener('input', () => {
 });
 
 if (peakPowerInputEl) {
-  peakPowerInputEl.addEventListener('input', () => resetOptimizationResult());
+  peakPowerInputEl.addEventListener('input', () => {
+    if (!syncingPowerFields) syncSplitInputsFromTotal();
+    resetOptimizationResult();
+  });
 }
 
 if (consumptionPowerInputEl) {
   consumptionPowerInputEl.addEventListener('input', () => resetOptimizationResult());
+}
+
+if (peakPower1InputEl) {
+  peakPower1InputEl.addEventListener('input', () => {
+    if (!syncingPowerFields) {
+      peakPower1InputEl.dataset.auto = 'false';
+      syncTotalInputFromSplit();
+    }
+    resetOptimizationResult();
+  });
+}
+
+if (peakPower2InputEl) {
+  peakPower2InputEl.addEventListener('input', () => {
+    if (!syncingPowerFields) {
+      peakPower2InputEl.dataset.auto = 'false';
+      syncTotalInputFromSplit();
+    }
+    resetOptimizationResult();
+  });
 }
 
 geoBtn.addEventListener('click', () => {
@@ -191,6 +257,16 @@ if (optimizeWcBtn) {
       if (!result) return;
 
       optimizedSplitResult = result;
+      if (peakPower1InputEl && peakPower2InputEl && peakPowerInputEl) {
+        syncingPowerFields = true;
+        peakPower1InputEl.value = String(Math.round(result.wc1));
+        peakPower2InputEl.value = String(Math.round(result.wc2));
+        peakPowerInputEl.value = String(Math.round(result.wc1 + result.wc2));
+        peakPower1InputEl.dataset.auto = 'false';
+        peakPower2InputEl.dataset.auto = 'false';
+        syncingPowerFields = false;
+        if (wcSplitHintEl) wcSplitHintEl.textContent = `Total réparti: ${Math.round(result.wc1 + result.wc2)} Wc`;
+      }
       if (optimizeWcResultEl) {
         optimizeWcResultEl.textContent =
           `Recommandé (${Math.round(result.totalWc)} Wc total) : ` +
@@ -198,7 +274,7 @@ if (optimizeWcBtn) {
           `· Couverture ${result.coveragePct.toFixed(1)}% · Autoconso ${result.selfConsumptionPct.toFixed(1)}%`;
       }
 
-      setStatus('Répartition Wc optimisée. Relancez Estimer pour visualiser les courbes actuelles.', 'success');
+      setStatus('Répartition Wc optimisée et appliquée aux champs.', 'success');
     } catch (error) {
       console.error(error);
       setStatus(`Erreur optimisation : ${error.message}`, 'error');
@@ -225,11 +301,18 @@ form.addEventListener('submit', async (event) => {
   setStatus('Calcul en cours…');
 
   try {
-    const primaryResult = await fetchFromSource(params);
+    const primaryResult = await fetchFromSource({
+      ...params,
+      peakPower: params.compareAzimuth ? params.peakPower1 : params.peakPower,
+    });
 
     let secondaryResult = null;
     if (params.compareAzimuth) {
-      secondaryResult = await fetchFromSource({ ...params, azimuth: params.azimuth2 });
+      secondaryResult = await fetchFromSource({
+        ...params,
+        azimuth: params.azimuth2,
+        peakPower: params.peakPower2,
+      });
     }
 
     const { dailyData, hourlyEntries } = primaryResult;
@@ -285,6 +368,8 @@ function getInputs() {
   const azimuth = Number(document.getElementById('azimuth').value);
   const compareAzimuth = compareAzimuthCheckbox.checked;
   const azimuth2 = Number(azimuth2Input.value);
+  const peakPower1InputW = Number(peakPower1InputEl?.value ?? 0);
+  const peakPower2InputW = Number(peakPower2InputEl?.value ?? 0);
   const losses = Number(document.getElementById('losses').value);
   const source = sourceSelect.value;
   const pvwattsKey = document.getElementById('pvwattsKey').value.trim();
@@ -314,7 +399,31 @@ function getInputs() {
     return null;
   }
 
-  return { lat, lon, peakPower, tilt, azimuth, compareAzimuth, azimuth2, losses, source, pvwattsKey };
+  let peakPower1 = peakPower;
+  let peakPower2 = 0;
+  if (compareAzimuth) {
+    if ([peakPower1InputW, peakPower2InputW].some((v) => Number.isNaN(v) || v <= 0)) {
+      setStatus('Merci de renseigner des Wc valides pour les 2 azimuts.', 'error');
+      return null;
+    }
+    peakPower1 = peakPower1InputW / 1000;
+    peakPower2 = peakPower2InputW / 1000;
+  }
+
+  return {
+    lat,
+    lon,
+    peakPower,
+    peakPower1,
+    peakPower2,
+    tilt,
+    azimuth,
+    compareAzimuth,
+    azimuth2,
+    losses,
+    source,
+    pvwattsKey,
+  };
 }
 
 async function optimizeWcSplit() {
@@ -1980,5 +2089,9 @@ function pdfFooter(doc, W, H, M, pageNum) {
 
 // ─── Init ──────────────────────────────────────────────────
 azimuth2Input.dataset.auto = 'true';
+if (peakPower1InputEl) peakPower1InputEl.dataset.auto = 'true';
+if (peakPower2InputEl) peakPower2InputEl.dataset.auto = 'true';
 setAutoOppositeAzimuth(true);
+syncSplitInputsFromTotal(true);
+syncTotalInputFromSplit();
 initMap();
