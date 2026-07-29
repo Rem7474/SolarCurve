@@ -1,6 +1,9 @@
 # SolarCurve
 
+[![CI](https://github.com/Rem7474/SolarCurve/actions/workflows/ci.yml/badge.svg)](https://github.com/Rem7474/SolarCurve/actions/workflows/ci.yml)
+
 Webapp statique pour estimer la production photovoltaïque quotidienne sur toute l'année selon :
+
 - position GPS (latitude/longitude)
 - puissance installée (kWc)
 - inclinaison des panneaux (tilt)
@@ -8,6 +11,7 @@ Webapp statique pour estimer la production photovoltaïque quotidienne sur toute
 - pertes système
 
 L'application utilise :
+
 - **PVGIS** (priorité, idéal Europe/Corse)
 - **PVWatts** en fallback (nécessite clé API NREL)
 
@@ -15,18 +19,40 @@ L'application utilise :
 
 Disponible en ligne : https://solar.remcorp.fr
 
+## Développement local
+
+```bash
+npm install
+npm run dev      # serveur de dev Vite (http://localhost:5173)
+npm run build    # build de production dans dist/
+npm run preview  # sert le build de production en local
+npm run lint     # ESLint
+npm run format   # Prettier (--write)
+npm test         # Vitest
+```
+
+L'application appelle exclusivement les routes same-origin `/api/pvgis` et `/api/pvwatts` (voir
+[Notes API](#notes-api) ci-dessous) — **ce dépôt ne contient pas leur implémentation serveur**. Pour
+développer en local avec de vraies données, faites tourner un proxy sur `http://localhost:8787`
+(cible configurée dans `vite.config.js`) qui relaie vers PVGIS/PVWatts, ou adaptez la cible du proxy
+Vite vers votre propre backend.
+
+Documentation complémentaire : [audit du code existant](docs/AUDIT.md) et
+[architecture cible / plan de migration](docs/ARCHITECTURE.md).
+
 ## Utilisation
 
 1. Saisir latitude/longitude (ou bouton géolocalisation).
-	- Vous pouvez aussi cliquer directement sur la carte pour positionner le point GPS.
+   - Vous pouvez aussi cliquer directement sur la carte pour positionner le point GPS.
 2. Saisir puissance, inclinaison, azimut et pertes.
    - Optionnel : activer **Comparer avec un 2e azimut** pour superposer deux courbes.
 3. Choisir la source de données :
-	- PVGIS (par défaut)
-	- PVWatts (si vous avez une clé API NREL)
+   - PVGIS (par défaut)
+   - PVWatts (si vous avez une clé API NREL)
 4. Cliquer sur **Estimer la courbe annuelle**.
 
 Résultats :
+
 - Affichage d'une **seule courbe journalière à la fois** (24 points horaires).
 - Slider de jour pour parcourir les jours calculés de l'année.
 - Superposition possible de deux courbes avec **2 azimuts différents**.
@@ -37,12 +63,14 @@ Résultats :
 ## Notes API
 
 L'application appelle d'abord des routes locales same-origin :
+
 - `/api/pvgis`
 - `/api/pvwatts`
 
 Ces routes `/api/*` sont obligatoires pour éviter le blocage CORS côté navigateur.
 
 ### PVGIS
+
 - Gratuit, sans clé API.
 - Endpoint utilisé : `https://re.jrc.ec.europa.eu/api/v5_3/seriescalc`
 - Paramètre clé activé : `pvcalculation=1` (sinon PVGIS peut ne renvoyer que l'irradiation sans puissance PV `P`).
@@ -50,6 +78,7 @@ Ces routes `/api/*` sont obligatoires pour éviter le blocage CORS côté naviga
 - Les données horaires sont agrégées en production quotidienne.
 
 ### PVWatts (fallback)
+
 - Endpoint : `https://developer.nrel.gov/api/pvwatts/v8.json`
 - Clé API gratuite requise (`api_key`).
 - Timeframe `hourly`, puis agrégation en production quotidienne.
@@ -57,6 +86,7 @@ Ces routes `/api/*` sont obligatoires pour éviter le blocage CORS côté naviga
 ## Convention d'azimut
 
 Pour garder un seul formulaire cohérent :
+
 - **0° = Sud**,
 - **-90° = Est**,
 - **+90° = Ouest**,
@@ -73,9 +103,8 @@ La conversion interne est appliquée selon l'API choisie.
 ## Déploiement production (important CORS)
 
 Si vous déployez sur un domaine public (ex: `https://solar.remcorp.fr`), il faut exposer un proxy same-origin :
+
 - `GET /api/pvgis` -> proxy vers `https://re.jrc.ec.europa.eu/api/v5_3/seriescalc`
 - `GET /api/pvwatts` -> proxy vers `https://developer.nrel.gov/api/pvwatts/v8.json`
 
 L'application est configurée pour utiliser exclusivement ces routes `/api/*`.
-
-
