@@ -17,6 +17,8 @@ de l'orientation des panneaux — à partir de données météo réelles
 
 <br>
 
+<img src="docs/screenshots/app.png" alt="SolarCurve — carte, formulaire et estimation de production" width="100%">
+
 ## Pourquoi cet outil ?
 
 Une estimation solaire à la louche (« kWc × 1000 heures d'ensoleillement »)
