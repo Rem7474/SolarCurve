@@ -4,34 +4,37 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SolarCurve — Estimation photovoltaïque</title>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'><circle cx='24' cy='24' r='10' fill='%23f59e0b'/><g stroke='%23f59e0b' stroke-width='2.5' stroke-linecap='round'><line x1='24' y1='2' x2='24' y2='9'/><line x1='24' y1='39' x2='24' y2='46'/><line x1='2' y1='24' x2='9' y2='24'/><line x1='39' y1='24' x2='46' y2='24'/><line x1='8.4' y1='8.4' x2='13.3' y2='13.3'/><line x1='34.7' y1='34.7' x2='39.6' y2='39.6'/><line x1='8.4' y1='39.6' x2='13.3' y2='34.7'/><line x1='34.7' y1='13.3' x2='39.6' y2='8.4'/></g></svg>" />
-    <link rel="stylesheet" href="styles.css" />
-    <link
-      rel="stylesheet"
-      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-      crossorigin=""
+    <meta
+      name="description"
+      content="Estimation de la production photovoltaïque quotidienne sur l'année selon position GPS, puissance installée, inclinaison, azimut et pertes système (PVGIS / PVWatts)."
     />
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'><circle cx='24' cy='24' r='10' fill='%23f59e0b'/><g stroke='%23f59e0b' stroke-width='2.5' stroke-linecap='round'><line x1='24' y1='2' x2='24' y2='9'/><line x1='24' y1='39' x2='24' y2='46'/><line x1='2' y1='24' x2='9' y2='24'/><line x1='39' y1='24' x2='46' y2='24'/><line x1='8.4' y1='8.4' x2='13.3' y2='13.3'/><line x1='34.7' y1='34.7' x2='39.6' y2='39.6'/><line x1='8.4' y1='39.6' x2='13.3' y2='34.7'/><line x1='34.7' y1='13.3' x2='39.6' y2='8.4'/></g></svg>"
+    />
   </head>
   <body>
     <div class="app-wrapper">
       <!-- ========== SIDEBAR ========== -->
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-brand">
-          <svg class="brand-icon" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="24" cy="24" r="10" fill="#f59e0b"/>
+          <svg
+            class="brand-icon"
+            viewBox="0 0 48 48"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <circle cx="24" cy="24" r="10" fill="#f59e0b" />
             <g stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round">
-              <line x1="24" y1="2" x2="24" y2="9"/>
-              <line x1="24" y1="39" x2="24" y2="46"/>
-              <line x1="2" y1="24" x2="9" y2="24"/>
-              <line x1="39" y1="24" x2="46" y2="24"/>
-              <line x1="8.4" y1="8.4" x2="13.3" y2="13.3"/>
-              <line x1="34.7" y1="34.7" x2="39.6" y2="39.6"/>
-              <line x1="8.4" y1="39.6" x2="13.3" y2="34.7"/>
-              <line x1="34.7" y1="13.3" x2="39.6" y2="8.4"/>
+              <line x1="24" y1="2" x2="24" y2="9" />
+              <line x1="24" y1="39" x2="24" y2="46" />
+              <line x1="2" y1="24" x2="9" y2="24" />
+              <line x1="39" y1="24" x2="46" y2="24" />
+              <line x1="8.4" y1="8.4" x2="13.3" y2="13.3" />
+              <line x1="34.7" y1="34.7" x2="39.6" y2="39.6" />
+              <line x1="8.4" y1="39.6" x2="13.3" y2="34.7" />
+              <line x1="34.7" y1="13.3" x2="39.6" y2="8.4" />
             </g>
           </svg>
           <div>
@@ -44,21 +47,64 @@
           <!-- Localisation -->
           <fieldset class="form-section">
             <legend>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
               Localisation
             </legend>
             <div class="field-row">
               <div class="field">
                 <label for="lat">Latitude</label>
-                <input id="lat" name="lat" type="text" inputmode="decimal" pattern="^-?\d{1,2}(?:[.,]\d{1,6})?$" required placeholder="ex : 42.7" />
+                <input
+                  id="lat"
+                  name="lat"
+                  type="text"
+                  inputmode="decimal"
+                  pattern="^-?\d{1,2}(?:[.,]\d{1,6})?$"
+                  required
+                  placeholder="ex : 42.7"
+                />
               </div>
               <div class="field">
                 <label for="lon">Longitude</label>
-                <input id="lon" name="lon" type="text" inputmode="decimal" pattern="^-?\d{1,3}(?:[.,]\d{1,6})?$" required placeholder="ex : 9.45" />
+                <input
+                  id="lon"
+                  name="lon"
+                  type="text"
+                  inputmode="decimal"
+                  pattern="^-?\d{1,3}(?:[.,]\d{1,6})?$"
+                  required
+                  placeholder="ex : 9.45"
+                />
               </div>
             </div>
             <button id="geo-btn" type="button" class="btn btn-secondary btn-block">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="2" x2="12" y2="6" />
+                <line x1="12" y1="18" x2="12" y2="22" />
+                <line x1="2" y1="12" x2="6" y2="12" />
+                <line x1="18" y1="12" x2="22" y2="12" />
+              </svg>
               Utiliser ma position
             </button>
           </fieldset>
@@ -66,12 +112,33 @@
           <!-- Installation -->
           <fieldset class="form-section">
             <legend>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="2" y="3" width="20" height="14" rx="2" />
+                <path d="M8 21h8" />
+                <path d="M12 17v4" />
+              </svg>
               Installation
             </legend>
             <div class="field">
               <label for="peakPower">Puissance crête (Wc)</label>
-              <input id="peakPower" name="peakPower" type="number" step="1" min="1" value="1000" required />
+              <input
+                id="peakPower"
+                name="peakPower"
+                type="number"
+                step="1"
+                min="1"
+                value="1000"
+                required
+              />
               <span class="field-hint">1 000 Wc = 1 kWc · Résultats en kWh</span>
             </div>
             <div class="field-row">
@@ -81,20 +148,41 @@
               </div>
               <div class="field">
                 <label for="azimuth">Azimut (°)</label>
-                <input id="azimuth" name="azimuth" type="number" min="-180" max="180" value="0" required />
+                <input
+                  id="azimuth"
+                  name="azimuth"
+                  type="number"
+                  min="-180"
+                  max="180"
+                  value="0"
+                  required
+                />
                 <span class="field-hint">0 = sud · −90 = est · +90 = ouest</span>
               </div>
             </div>
 
             <label class="toggle-label" for="compareAzimuth">
-              <input id="compareAzimuth" name="compareAzimuth" type="checkbox" class="toggle-checkbox" />
+              <input
+                id="compareAzimuth"
+                name="compareAzimuth"
+                type="checkbox"
+                class="toggle-checkbox"
+              />
               <span class="toggle-switch"></span>
               <span>Ajouter un 2<sup>e</sup> azimut</span>
             </label>
 
             <div id="azimuth2-wrapper" class="field hidden">
               <label for="azimuth2">Azimut 2 (°)</label>
-              <input id="azimuth2" name="azimuth2" type="number" min="-180" max="180" value="90" disabled />
+              <input
+                id="azimuth2"
+                name="azimuth2"
+                type="number"
+                min="-180"
+                max="180"
+                value="90"
+                disabled
+              />
               <span class="field-hint">Courbe superposée au 1<sup>er</sup> azimut</span>
             </div>
 
@@ -103,14 +191,32 @@
               <div class="field-row">
                 <div class="field">
                   <label for="peakPower1">Wc azimut 1</label>
-                  <input id="peakPower1" name="peakPower1" type="number" step="1" min="1" value="600" disabled />
+                  <input
+                    id="peakPower1"
+                    name="peakPower1"
+                    type="number"
+                    step="1"
+                    min="1"
+                    value="600"
+                    disabled
+                  />
                 </div>
                 <div class="field">
                   <label for="peakPower2">Wc azimut 2</label>
-                  <input id="peakPower2" name="peakPower2" type="number" step="1" min="1" value="400" disabled />
+                  <input
+                    id="peakPower2"
+                    name="peakPower2"
+                    type="number"
+                    step="1"
+                    min="1"
+                    value="400"
+                    disabled
+                  />
                 </div>
               </div>
-              <span id="wcSplitHint" class="field-hint">Par défaut: 60% / 40% (modifiable manuellement)</span>
+              <span id="wcSplitHint" class="field-hint"
+                >Par défaut: 60% / 40% (modifiable manuellement)</span
+              >
             </div>
 
             <button id="optimizeWcBtn" type="button" class="btn btn-secondary btn-block">
@@ -122,12 +228,35 @@
           <!-- Paramètres avancés -->
           <fieldset class="form-section">
             <legend>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1.08 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 0 1 0 4h-.09c-.658.003-1.25.396-1.51 1z"/></svg>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path
+                  d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1.08 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 0 1 0 4h-.09c-.658.003-1.25.396-1.51 1z"
+                />
+              </svg>
               Paramètres
             </legend>
             <div class="field">
               <label for="losses">Pertes système (%)</label>
-              <input id="losses" name="losses" type="number" min="0" max="100" step="0.1" value="14" required />
+              <input
+                id="losses"
+                name="losses"
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value="14"
+                required
+              />
             </div>
             <div class="field">
               <label for="source">Source de données</label>
@@ -142,13 +271,33 @@
             </div>
             <div class="field">
               <label for="consumptionPower">Charge moyenne (W)</label>
-              <input id="consumptionPower" name="consumptionPower" type="number" step="10" min="0" value="0" />
-              <span class="field-hint">Puissance pour l'estimation d'effacement talon (0 = désactivé)</span>
+              <input
+                id="consumptionPower"
+                name="consumptionPower"
+                type="number"
+                step="10"
+                min="0"
+                value="0"
+              />
+              <span class="field-hint"
+                >Puissance pour l'estimation d'effacement talon (0 = désactivé)</span
+              >
             </div>
           </fieldset>
 
           <button id="estimate-btn" type="submit" class="btn btn-primary btn-block">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
             <span>Estimer la production</span>
           </button>
         </form>
@@ -157,25 +306,72 @@
       <!-- ========== MAIN CONTENT ========== -->
       <main class="main-content">
         <!-- Toggle sidebar on mobile -->
-        <button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-label="Ouvrir le panneau">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        <button
+          id="sidebar-toggle"
+          class="sidebar-toggle"
+          type="button"
+          aria-label="Ouvrir le panneau"
+        >
+          <svg
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
         </button>
 
         <!-- Map Section -->
         <section class="card map-card">
           <div class="card-header">
             <h2>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />
+                <line x1="8" y1="2" x2="8" y2="18" />
+                <line x1="16" y1="6" x2="16" y2="22" />
+              </svg>
               Carte interactive
             </h2>
-            <p id="mapHint" class="card-hint">Cliquez sur la carte pour placer le point · <kbd>Ctrl</kbd>+clic pour ajuster l'azimut</p>
+            <p id="mapHint" class="card-hint">
+              Cliquez sur la carte pour placer le point · <kbd>Ctrl</kbd>+clic pour ajuster l'azimut
+            </p>
           </div>
           <div id="map" class="map-container"></div>
         </section>
 
         <!-- Status -->
         <div id="status" class="status-bar">
-          <svg class="status-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <svg
+            class="status-icon"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
           <span id="statusText">Prêt.</span>
         </div>
 
@@ -191,7 +387,22 @@
         <!-- Export -->
         <div id="exportArea" class="export-bar hidden">
           <button id="exportPdfBtn" class="btn btn-export">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+              <polyline points="10 9 9 9 8 9" />
+            </svg>
             Exporter le rapport PDF
           </button>
         </div>
@@ -202,7 +413,21 @@
           <section class="card chart-card">
             <div class="card-header">
               <h2>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <rect x="3" y="3" width="7" height="7" />
+                  <rect x="14" y="3" width="7" height="7" />
+                  <rect x="14" y="14" width="7" height="7" />
+                  <rect x="3" y="14" width="7" height="7" />
+                </svg>
                 Profil mensuel moyen
               </h2>
               <div class="month-row">
@@ -231,18 +456,63 @@
           <section class="card chart-card">
             <div class="card-header">
               <h2>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                </svg>
                 Profil journalier
               </h2>
               <span id="dayLabel" class="day-label">—</span>
             </div>
             <div class="slider-row">
-              <button id="prevDay" class="btn-icon" title="Jour précédent" aria-label="Jour précédent" disabled>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+              <button
+                id="prevDay"
+                class="btn-icon"
+                title="Jour précédent"
+                aria-label="Jour précédent"
+                disabled
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polyline points="15 18 9 12 15 6" />
+                </svg>
               </button>
               <input id="daySlider" type="range" min="1" max="365" step="1" value="1" disabled />
-              <button id="nextDay" class="btn-icon" title="Jour suivant" aria-label="Jour suivant" disabled>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+              <button
+                id="nextDay"
+                class="btn-icon"
+                title="Jour suivant"
+                aria-label="Jour suivant"
+                disabled
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polyline points="9 6 15 12 9 18" />
+                </svg>
               </button>
             </div>
             <div class="chart-container">
@@ -254,7 +524,21 @@
           <section id="peakShavingSection" class="card chart-card hidden">
             <div class="card-header">
               <h2>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                  <path d="M21 3v5h-5" />
+                  <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                  <path d="M3 21v-5h5" />
+                </svg>
                 Estimation d'effacement talon
               </h2>
             </div>
@@ -270,11 +554,6 @@
     <!-- Sidebar overlay for mobile -->
     <div id="sidebarOverlay" class="sidebar-overlay"></div>
 
-    <script
-      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-      crossorigin=""
-    ></script>
-    <script src="app.js"></script>
+    <script type="module" src="/src/main.js"></script>
   </body>
 </html>

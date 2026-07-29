@@ -1,0 +1,14 @@
+/* ============================================================
+   SolarCurve — Modern UI/UX Stylesheet
+   Point d'entrée : importe les partials dans l'ordre de cascade
+   d'origine (tokens -> base -> layout -> components -> responsive).
+   ============================================================ */
+
+@import './tokens.css';
+@import './base.css';
+@import './layout.css';
+@import './components/forms.css';
+@import './components/buttons.css';
+@import './components/cards.css';
+@import './components/charts.css';
+@import './responsive.css';

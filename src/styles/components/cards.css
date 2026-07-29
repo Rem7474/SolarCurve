@@ -1,0 +1,217 @@
+/* ---------- Cards ---------- */
+.card {
+  background: var(--c-card);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--c-border);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.card-header {
+  padding: var(--space-md) var(--space-lg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  border-bottom: 1px solid var(--c-border);
+}
+
+.card-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--c-dark);
+}
+
+.card-header h2 svg {
+  color: var(--c-primary-dark);
+  flex-shrink: 0;
+}
+
+.card-hint {
+  font-size: 0.8rem;
+  color: var(--c-text-muted);
+}
+
+.card-hint kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  font-size: 0.72rem;
+  font-family: inherit;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  color: var(--c-text-muted);
+}
+
+/* ---------- Map ---------- */
+.map-card {
+  flex-shrink: 0;
+}
+
+.map-container {
+  width: 100%;
+  height: 380px;
+}
+
+/* ---------- Leaflet Azimuth Handle ---------- */
+.az-handle-icon {
+  width: 28px;
+  height: 28px;
+  display: block;
+  cursor: pointer;
+}
+
+.az-handle-icon .az-handle-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--c-dark);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  display: block;
+  margin: 8px auto;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* ---------- Status Bar ---------- */
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px var(--space-md);
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--c-text-muted);
+  transition: all 0.3s;
+}
+
+.status-bar.is-error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: var(--c-danger);
+}
+
+.status-bar.is-success {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: var(--c-success);
+}
+
+.status-icon {
+  flex-shrink: 0;
+}
+
+/* ---------- Loading Overlay ---------- */
+.loading-overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  padding: var(--space-xl);
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-lg);
+  text-align: center;
+}
+
+.loading-overlay p {
+  font-size: 0.9rem;
+  color: var(--c-text-muted);
+  font-weight: 500;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--c-border);
+  border-top-color: var(--c-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- Stats Grid ---------- */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-md);
+}
+
+.stat-item {
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  position: relative;
+  overflow: hidden;
+  transition:
+    box-shadow 0.2s,
+    transform 0.2s;
+}
+
+.stat-item:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.stat-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+}
+
+.stat-item:nth-child(1)::before {
+  background: var(--c-primary);
+}
+.stat-item:nth-child(2)::before {
+  background: var(--c-accent);
+}
+.stat-item:nth-child(3)::before {
+  background: var(--c-success);
+}
+.stat-item:nth-child(4)::before {
+  background: var(--c-danger);
+}
+.stat-item:nth-child(5)::before {
+  background: #8b5cf6;
+}
+.stat-item:nth-child(6)::before {
+  background: #ec4899;
+}
+
+.stat-item strong {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--c-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 4px;
+}
+
+.stat-item .stat-value {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--c-dark);
+}
+
+/* ---------- Export Bar ---------- */
+.export-bar {
+  display: flex;
+  justify-content: flex-end;
+}

@@ -1,0 +1,82 @@
+/* Importé en dernier dans main.css : ces règles doivent gagner la cascade
+   sur les règles de composants équivalentes (même spécificité, ordre de source). */
+
+/* ---------- Responsive ---------- */
+@media (max-width: 900px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    transform: translateX(-100%);
+    z-index: 110;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-overlay {
+    display: block;
+  }
+
+  .sidebar-toggle {
+    display: flex;
+  }
+
+  .main-content {
+    padding: var(--space-md);
+    padding-top: 64px;
+  }
+
+  .map-container {
+    height: 280px;
+  }
+
+  .chart-container {
+    height: 280px;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 500px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .field-row {
+    grid-template-columns: 1fr;
+  }
+
+  .slider-row {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}
+
+/* ---------- Print ---------- */
+@media print {
+  .sidebar,
+  .sidebar-toggle,
+  .sidebar-overlay,
+  .export-bar {
+    display: none !important;
+  }
+  .main-content {
+    padding: 0;
+    max-height: unset;
+    overflow: visible;
+  }
+  .app-wrapper {
+    display: block;
+  }
+}
