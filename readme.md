@@ -19,6 +19,30 @@ L'application utilise :
 
 Disponible en ligne : https://solar.remcorp.fr
 
+## Prérequis
+
+- **Node.js `^20.19.0` ou `>=22.12.0`** — requis par Vite 8 (son bundler `rolldown` utilise `util.styleText`,
+  disponible seulement à partir de Node 20.12+ ; en dessous de `20.19`/`22.12` le build échoue avec une
+  `SyntaxError` sur `node:util`). Vérifiez avec `node -v`.
+- **npm** (fourni avec Node.js).
+- **git** pour cloner le dépôt.
+
+Gérer sa version de Node avec [nvm](https://github.com/nvm-sh/nvm) est recommandé si votre système a une
+version plus ancienne :
+
+```bash
+nvm install 22
+nvm use 22
+node -v   # doit afficher >=22.12.0 (ou >=20.19.0)
+```
+
+Cloner le dépôt :
+
+```bash
+git clone https://github.com/Rem7474/SolarCurve.git
+cd SolarCurve
+```
+
 ## Développement local
 
 ```bash
