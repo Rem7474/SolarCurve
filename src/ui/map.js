@@ -406,11 +406,11 @@ export async function captureMapForPDF() {
     };
 
     if (state.azimuthShaft && state.azimuthHead) {
-      drawArrow(state.azimuthShaft, state.azimuthHead, '#ef4444', 3);
+      drawArrow(state.azimuthShaft, state.azimuthHead, CHART_COLORS.primary, 3);
     }
 
     if (state.azimuthSecondaryShaft && state.azimuthSecondaryHead) {
-      drawArrow(state.azimuthSecondaryShaft, state.azimuthSecondaryHead, '#2563eb', 3);
+      drawArrow(state.azimuthSecondaryShaft, state.azimuthSecondaryHead, CHART_COLORS.secondary, 3);
     }
 
     if (state.marker) {
