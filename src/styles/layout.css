@@ -80,6 +80,9 @@
   gap: var(--space-lg);
   max-height: 100vh;
   overflow-y: auto;
+  /* Leaflet's internal panes use z-index up to 700; without a stacking
+     context here they'd paint above the mobile sidebar (z-index 110). */
+  isolation: isolate;
 }
 
 /* ---------- Sidebar Toggle (mobile) ---------- */
@@ -106,6 +109,13 @@
   background: var(--c-bg);
 }
 
+/* Hidden while the sidebar is open: it would otherwise overlap the
+   sidebar's own brand header, and the overlay already closes it. */
+.sidebar-toggle.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .sidebar-overlay {
   display: none;
   position: fixed;
@@ -114,9 +124,11 @@
   backdrop-filter: blur(4px);
   z-index: 90;
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.3s;
 }
 
 .sidebar-overlay.active {
   opacity: 1;
+  pointer-events: auto;
 }
