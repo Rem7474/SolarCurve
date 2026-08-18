@@ -68,7 +68,7 @@
 .az-handle-icon .az-handle-dot {
   width: 8px;
   height: 8px;
-  background: var(--c-dark);
+  background: #0f172a;
   border: 2px solid #fff;
   border-radius: 50%;
   display: block;
@@ -101,6 +101,18 @@
   background: #f0fdf4;
   border-color: #bbf7d0;
   color: var(--c-success);
+}
+
+@media (prefers-color-scheme: dark) {
+  .status-bar.is-error {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.35);
+  }
+
+  .status-bar.is-success {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.35);
+  }
 }
 
 .status-icon {
