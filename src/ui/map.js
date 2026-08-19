@@ -42,7 +42,7 @@ export function initMap() {
     if (isCtrlClick && state.marker) {
       const ml = state.marker.getLatLng();
       const bearing = bearingBetweenPoints(ml.lat, ml.lng, lat, lng);
-      azimuthInput.value = String(azimuthNorthClockwiseToAzimuthSouth(bearing));
+      azimuthInput.value = azimuthNorthClockwiseToAzimuthSouth(bearing).toFixed(2);
       setAutoOppositeAzimuth();
       updateAzimuthArrowFromInputs();
       if (mapHintEl)
@@ -236,7 +236,7 @@ function updateArrowLayer(lat, lon, azimuthSouth, color, shaftLayer, headLayer, 
           }
           const ll = state.map.mouseEventToLatLng(ev);
           const b = bearingBetweenPoints(markerLL.lat, markerLL.lng, ll.lat, ll.lng);
-          azimuthInput.value = String(azimuthNorthClockwiseToAzimuthSouth(b));
+          azimuthInput.value = azimuthNorthClockwiseToAzimuthSouth(b).toFixed(2);
           setAutoOppositeAzimuth();
           updateAzimuthArrowFromInputs();
           handleMarker.setLatLng([ll.lat, ll.lng]);

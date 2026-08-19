@@ -70,7 +70,7 @@ export function setAutoOppositeAzimuth(force = false) {
   if (!force && azimuth2Input.dataset.auto === 'false') return;
   const azimuthSouth = parseDecimal(azimuthInput.value);
   if (Number.isNaN(azimuthSouth)) return;
-  azimuth2Input.value = String(getOppositeAzimuth(azimuthSouth));
+  azimuth2Input.value = getOppositeAzimuth(azimuthSouth).toFixed(2);
   azimuth2Input.dataset.auto = 'true';
 }
 
