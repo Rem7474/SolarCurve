@@ -57,13 +57,13 @@
 }
 
 .btn-export {
-  background: var(--c-dark);
+  background: #0f172a;
   color: #fff;
   box-shadow: var(--shadow-sm);
 }
 
 .btn-export:hover {
-  background: var(--c-dark-soft);
+  background: #1e293b;
   box-shadow: var(--shadow-md);
   transform: translateY(-1px);
 }
