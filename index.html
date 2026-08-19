@@ -195,9 +195,9 @@
                 <input
                   id="azimuth"
                   name="azimuth"
-                  type="number"
-                  min="-180"
-                  max="180"
+                  type="text"
+                  inputmode="decimal"
+                  pattern="^-?\d{1,3}(?:[.,]\d+)?$"
                   value="0"
                   required
                 />
@@ -221,9 +221,9 @@
               <input
                 id="azimuth2"
                 name="azimuth2"
-                type="number"
-                min="-180"
-                max="180"
+                type="text"
+                inputmode="decimal"
+                pattern="^-?\d{1,3}(?:[.,]\d+)?$"
                 value="90"
                 disabled
               />
