@@ -95,8 +95,8 @@ export function updateAzimuthArrowFromInputs() {
   if (!state.map) return;
   const lat = parseDecimal(latInput.value);
   const lon = parseDecimal(lonInput.value);
-  const azS = Number(azimuthInput.value);
-  const azS2 = Number(azimuth2Input.value);
+  const azS = parseDecimal(azimuthInput.value);
+  const azS2 = parseDecimal(azimuth2Input.value);
   const compareEnabled = compareAzimuthCheckbox.checked && !azimuth2Input.disabled;
 
   if (Number.isNaN(lat) || Number.isNaN(lon) || Number.isNaN(azS)) {

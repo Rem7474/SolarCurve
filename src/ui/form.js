@@ -68,7 +68,7 @@ export function syncTotalInputFromSplit() {
 export function setAutoOppositeAzimuth(force = false) {
   if (!compareAzimuthCheckbox.checked && !force) return;
   if (!force && azimuth2Input.dataset.auto === 'false') return;
-  const azimuthSouth = Number(azimuthInput.value);
+  const azimuthSouth = parseDecimal(azimuthInput.value);
   if (Number.isNaN(azimuthSouth)) return;
   azimuth2Input.value = String(getOppositeAzimuth(azimuthSouth));
   azimuth2Input.dataset.auto = 'true';
@@ -80,9 +80,9 @@ export function getInputs() {
   const peakPowerInputW = Number(peakPowerInputEl.value);
   const peakPower = peakPowerInputW / 1000; // kWp pour l'API
   const tilt = Number(tiltInput.value);
-  const azimuth = Number(azimuthInput.value);
+  const azimuth = parseDecimal(azimuthInput.value);
   const compareAzimuth = compareAzimuthCheckbox.checked;
-  const azimuth2 = Number(azimuth2Input.value);
+  const azimuth2 = parseDecimal(azimuth2Input.value);
   const peakPower1InputW = Number(peakPower1InputEl?.value ?? 0);
   const peakPower2InputW = Number(peakPower2InputEl?.value ?? 0);
   const losses = Number(lossesInput.value);
